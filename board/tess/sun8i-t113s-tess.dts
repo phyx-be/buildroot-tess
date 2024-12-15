@@ -72,6 +72,15 @@
 		regulator-max-microvolt = <880000>;
 		vin-supply = <&reg_vcc5v>;
 	};
+
+	touch_reg: touch_reg@1 {
+		compatible = "regulator-fixed";
+		regulator-name = "touch_reg_1";
+		gpio = <&display_mcu 1 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <50000>;
+		enable-active-high;
+		regulator-boot-on;
+	};
 };
 
 &cpu0 {
@@ -82,11 +91,40 @@
 	cpu-supply = <&reg_vcc_core>;
 };
 
-/* dsi connector */
+&de {
+	status = "okay";
+};
+
+&dphy {
+	status = "okay";
+};
+
 &dsi {
 	vcc-dsi-supply = <&reg_3v3>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&dsi_4lane_pins>;
+	status = "okay";
+
+	panel: panel@0 {
+		reg = <0>;
+		compatible = "raspberrypi,dsi-7inch";
+		reset-gpio = <&display_mcu 0 GPIO_ACTIVE_LOW>;
+		backlight = <&display_mcu>;
+		status = "okay";
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&tcon_lcd0_out_dsi>;
+			};
+		};
+	};
+};
+
+&gpadc {
+	status = "okay";
+};
+
+&dmic {
 	status = "okay";
 };
 
@@ -105,10 +143,6 @@
 	vmmc-supply = <&reg_3v3>;
 	disable-wp;
 	bus-width = <4>;
-	status = "okay";
-};
-
-&ohci1 {
 	status = "okay";
 };
 
@@ -200,7 +234,26 @@
 &i2c2 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c2_pd_pins>;
+	#address-cells = <1>;
+	#size-cells = <0>;
 	status = "okay";
+
+	display_mcu: display_mcu@45 {
+		compatible = "raspberrypi,v2-touchscreen-panel-regulator";
+		reg = <0x45>;
+		gpio-controller;
+		#gpio-cells = <2>;
+	};
+
+	gt911: gt911@5d {
+		compatible = "goodix,gt911";
+		reg = <0x5d>;
+		AVDD28-supply = <&touch_reg>;
+		touchscreen-size-x = <720>;
+		touchscreen-size-y = <1280>;
+		touchscreen-x-mm = <90>;
+		touchscreen-y-mm = <151>;
+	};
 };
 
 /* feather i2c */
@@ -221,6 +274,18 @@
 &spi1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&spi1_pd_pins>;
+	status = "okay";
+};
+
+&ohci0 {
+	status = "okay";
+};
+
+&ehci0 {
+	status = "okay";
+};
+
+&ohci1 {
 	status = "okay";
 };
 
