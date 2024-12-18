@@ -100,6 +100,8 @@
 };
 
 &dsi {
+	#address-cells = <1>;
+	#size-cells = <0>;
 	vcc-dsi-supply = <&reg_3v3>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&dsi_4lane_pins>;
@@ -110,6 +112,7 @@
 		compatible = "raspberrypi,dsi-7inch";
 		reset-gpio = <&display_mcu 0 GPIO_ACTIVE_LOW>;
 		backlight = <&display_mcu>;
+		power-supply = <&reg_3v3>;
 		status = "okay";
 
 		port {
@@ -118,6 +121,10 @@
 			};
 		};
 	};
+};
+
+&tcon_lcd0 {
+    status = "okay";
 };
 
 &gpadc {
