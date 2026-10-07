@@ -143,6 +143,11 @@
 	status = "okay";
 };
 
+/* restart handler for reboot */
+&wdt {
+	status = "okay";
+};
+
 &dcxo {
 	clock-frequency = <24000000>;
 };
