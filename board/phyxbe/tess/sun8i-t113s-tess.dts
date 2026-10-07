@@ -50,14 +50,6 @@
 		};
 	};
 
-	backlight: backlight {
-		compatible = "pwm-backlight";
-		pwms = <&display_mcu 0 255 0>;
-		brightness-levels = <0 255>;
-		num-interpolated-steps = <255>;
-		default-brightness-level = <255>;
-	};
-
 	/* board wide 5V supply directly from the USB-C socket */
 	reg_vcc5v: regulator-5v {
 		compatible = "regulator-fixed";
@@ -84,15 +76,6 @@
 		regulator-max-microvolt = <880000>;
 		vin-supply = <&reg_vcc5v>;
 	};
-
-	touch_reg: touch_reg@1 {
-		compatible = "regulator-fixed";
-		regulator-name = "touch_reg_1";
-		gpio = <&display_mcu 1 GPIO_ACTIVE_HIGH>;
-		startup-delay-us = <50000>;
-		enable-active-high;
-		regulator-boot-on;
-	};
 };
 
 &cpu0 {
@@ -103,34 +86,7 @@
 	cpu-supply = <&reg_vcc_core>;
 };
 
-&de {
-	status = "okay";
-};
-
-&dphy {
-	status = "okay";
-};
-
-&dsi {
-	#address-cells = <1>;
-	#size-cells = <0>;
-	vcc-dsi-supply = <&reg_3v3>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&dsi_4lane_pins>;
-	status = "okay";
-
-	panel: panel@0 {
-		reg = <0>;
-		compatible = "raspberrypi,dsi-7inch";
-		reset-gpios = <&display_mcu 0 GPIO_ACTIVE_LOW>;
-		backlight = <&backlight>;
-		power-supply = <&reg_3v3>;
-	};
-};
-
-&tcon_lcd0 {
-    status = "okay";
-};
+/* The DSI display is described in the rpi-7inch-dsi.dtso overlay */
 
 &gpadc {
 	status = "okay";
@@ -255,24 +211,6 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	status = "okay";
-
-	display_mcu: display_mcu@45 {
-		compatible = "raspberrypi,touchscreen-panel-regulator-v2";
-		reg = <0x45>;
-		gpio-controller;
-		#gpio-cells = <2>;
-		#pwm-cells = <3>;
-	};
-
-	gt911: gt911@5d {
-		compatible = "goodix,gt911";
-		reg = <0x5d>;
-		AVDD28-supply = <&touch_reg>;
-		touchscreen-size-x = <720>;
-		touchscreen-size-y = <1280>;
-		touchscreen-x-mm = <90>;
-		touchscreen-y-mm = <151>;
-	};
 };
 
 /* feather i2c */

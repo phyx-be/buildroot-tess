@@ -83,12 +83,10 @@ WiFi: write /boot/wpa_supplicant.conf on the board, e.g.
 
 and reboot. The country is set in /etc/default/regdomain.
 
-TODO
-====
+Display
+=======
 
-- Move the Raspberry Pi 7" DSI display (panel, display MCU, GT911
-  touchscreen, touch regulator and backlight) out of
-  sun8i-t113s-tess.dts into a device tree overlay, so the base board
-  boots cleanly without a display attached. This needs U-Boot overlay
-  support (CONFIG_OF_LIBFDT_OVERLAY), a DTB built with symbols (-@) and
-  an extra FEL write in flash.sh.
+The Raspberry Pi 7" DSI display (with touchscreen) is not in the board
+device tree but in the rpi-7inch-dsi.dtbo overlay. The main image loads
+it with "fdtoverlays" in /boot/extlinux/extlinux.conf: remove that line
+when no display is connected. The flasher applies it in its boot script.

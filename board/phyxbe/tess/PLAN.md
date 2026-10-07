@@ -317,13 +317,18 @@ Purpose: the normal product image, booting on its own from the SD NAND.
 
 Related TODOs:
 
-- Move the Raspberry Pi 7" DSI display into a device tree overlay
-  (see `readme.txt`).
+- ~~Move the Raspberry Pi 7" DSI display into a device tree overlay.~~
+  Done: `rpi-7inch-dsi.dtso`, applied by U-Boot (extlinux `fdtoverlays`
+  in the main image, `fdt apply` in the flasher boot script); the base DTB
+  is built with symbols (`BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT`). Linux
+  6.18 cannot build a single `.dtbo` in `arch/arm/boot/dts`:
+  `patches/linux/0002-kbuild-*.patch`.
 - Upstream: esp-hosted-linux issue: `CMD_STA_SET_AUTHORIZED` fails with
   the ESP-IDF v6.1 Wi-Fi libraries (bisected to `4ddec53`), plus the
   reconnect loop; esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
   `esp-hosted` package update; espflash patch for non-enumerated ports;
-  Buildroot `bluez5_utils` btattach backport;
+  Buildroot `bluez5_utils` btattach backport; kbuild patch for single
+  `.dtbo` targets;
   Buildroot `python-esptool` 5.x misses its `rich_click`/`click`
   dependencies.
 - Flasher: `seedrng` cannot write `/var/lib/seedrng` on the read-only
