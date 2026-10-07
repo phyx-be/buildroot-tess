@@ -1,3 +1,3 @@
 # Locally calculated
-sha256  b8baa6d1c8576f5453e382333bc4aafef1293b4705f073dff5b08d900d10d68c  ng-v1.0.6.tar.gz
-sha256  f6b78c087c3ebdf0f3c13415070dd480a3f35d8fc76f3d02180a407c1c812f79  esp_hosted_ng/host/LICENSE
+sha256  c81b10e97ebc30e26538b2b6703f30e19899c935def1dd5672422c1088e6cd5e  esp-hosted-599c47cdc8365a3e2aa35e1cfca0476ac2b2af3f.tar.gz
+sha256  f6b78c087c3ebdf0f3c13415070dd480a3f35d8fc76f3d02180a407c1c812f79  host/LICENSE

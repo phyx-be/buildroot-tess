@@ -12,6 +12,8 @@ config BR2_PACKAGE_ESP_HOSTED
 	  busses that is selectable. It is compatible with recent Linux
 	  kernels (>= 5.4).
 
+	  https://github.com/espressif/esp-hosted-linux
+
 if BR2_PACKAGE_ESP_HOSTED
 
 choice
