@@ -2,8 +2,8 @@
 
 Status (2026-10-07): the flasher image flashes the ESP32-C3 and writes
 the main image to the SD NAND, and the main image boots from the SD
-NAND. esp-hosted detects the ESP32-C3 and creates wlan0, but commands
-over SPI time out (see section 5). BLE is not tested yet. See section 6.
+NAND. WiFi over esp-hosted works (wlan0, scanning with wpa_supplicant).
+BLE is not tested yet. See section 6.
 
 Goals:
 
@@ -245,14 +245,18 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   DTS enables it, so `sunxi-wdt` provides the restart handler.
 - Tested 2026-10-07: SPL, U-Boot distro boot (extlinux), ext4 root on
   `mmcblk0p1`. esp32_spi gets the boot-up event, detects the ESP32-C3,
-  switches SPI to 30 MHz, versions match (`NG-1.0.6.0.14`), and wlan0
-  appears after a few retries. **Open problem:** commands time out
-  (`CMD_TIMEOUT`), and their response arrives with the next command
-  (`CMD_RESP_MISMATCH expected=7/3 got=3/2`): the host misses the ESP's
-  data-ready, or does not act on it. A scan returns no results. Suspects:
-  the edge-triggered handshake/data-ready IRQs vs. the work function's
-  GPIO reads on the sunxi pin controller, the SPI clock (try lower than
-  30 MHz). `iwlist` cannot scan (no WEXT), use `iw` or wpa_supplicant.
+  switches SPI to 30 MHz, versions match (`NG-1.0.6.0.14`), wlan0
+  appears and wpa_supplicant scans (5 scans in a row, no errors).
+- **Fixed: SPI command timeouts.** Commands timed out (`CMD_TIMEOUT`)
+  and their response came with the next command (`CMD_RESP_MISMATCH`).
+  Cause: the T113 pin controller samples GPIO interrupts with the 32 kHz
+  LOSC by default (`Px_EINT_DEB` reset value 0), so it missed the short
+  ESP32-C3 handshake/data-ready pulses. Fix in the Tess DTS:
+  `&pio { input-debounce = <1 1 1 1 1 1>; }` (HOSC, 750 kHz sampling).
+- `iwlist` cannot scan (no WEXT), use `iw` or wpa_supplicant.
+- `cfg80211: failed to load regulatory.db` at boot: cfg80211 is built in
+  and tries before the root filesystem is mounted. To check whether it
+  loads it later, or build it into the kernel (`CONFIG_EXTRA_FIRMWARE`).
 - To do: a data partition (`mmcblk0p2`). `rootfs_overlay/etc/default/datafs`
   still points `DATDEV` at `mmcblk0p1`, which is now the rootfs; nothing
   calls `/usr/bin/datafs` today, but fix this before using it, as it
@@ -280,8 +284,8 @@ Purpose: the normal product image, booting on its own from the SD NAND.
 2. ~~Kernel module and device tree.~~ Done, probes on the board.
 3. ~~Firmware build script and binaries.~~ Done.
 4. ~~Flasher image: espflash, squashfs root, `tess-install`.~~ Done.
-5. Main image from the SD NAND: boots. Next: fix the esp-hosted SPI
-   command timeouts, then `iw dev wlan0 scan`, `wpa_supplicant`,
+5. Main image from the SD NAND: boots, WiFi scans work (SPI timeouts
+   fixed with `input-debounce`). Next: connect to an access point,
    `btattach` + `bluetoothctl scan on`.
 6. Main image: data partition, init scripts, OTA update of the ESP
    firmware.

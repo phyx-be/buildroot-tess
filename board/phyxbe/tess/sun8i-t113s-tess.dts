@@ -163,6 +163,12 @@
 };
 
 &pio {
+	/*
+	 * Sample the GPIO interrupts with HOSC instead of the 32 kHz LOSC
+	 * reset default, which misses the short ESP32-C3 handshake and
+	 * data-ready pulses (one value per IRQ bank, PB-PG, in us).
+	 */
+	input-debounce = <1 1 1 1 1 1>;
 	vcc-pb-supply = <&reg_3v3>;
 	vcc-pd-supply = <&reg_3v3>;
 	vcc-pe-supply = <&reg_3v3>;
