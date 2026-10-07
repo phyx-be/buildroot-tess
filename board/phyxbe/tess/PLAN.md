@@ -2,8 +2,9 @@
 
 Status (2026-10-07): the flasher image flashes the ESP32-C3 and writes
 the main image to the SD NAND, and the main image boots from the SD
-NAND. WiFi over esp-hosted works (wlan0, scanning with wpa_supplicant).
-BLE is not tested yet. See section 6.
+NAND. WiFi over esp-hosted works (wlan0, scanning with iw and
+wpa_supplicant) and BLE over UART2 works (btattach, bluetoothctl LE
+scan). See section 6.
 
 Goals:
 
@@ -254,23 +255,35 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   ESP32-C3 handshake/data-ready pulses. Fix in the Tess DTS:
   `&pio { input-debounce = <1 1 1 1 1 1>; }` (HOSC, 750 kHz sampling).
 - `iwlist` cannot scan (no WEXT), use `iw` or wpa_supplicant.
-- `cfg80211: failed to load regulatory.db` at boot: cfg80211 is built in
-  and tries before the root filesystem is mounted. To check whether it
-  loads it later, or build it into the kernel (`CONFIG_EXTRA_FIRMWARE`).
+- **Fixed: regulatory.db.** cfg80211 is built in (the esp-hosted package
+  forces `CONFIG_CFG80211=y`) and tries to load `regulatory.db` before
+  the root filesystem is mounted. After that failure the kernel never
+  retries (`regdb = ERR_PTR(-ENODATA)`), so `iw reg set` was silently
+  ignored. `/etc/init.d/S45regdb` runs `iw reg reload` and, if set in
+  `/etc/default/regdomain`, `iw reg set $REGDOMAIN` (empty by default:
+  world domain). esp-hosted logs `Regulatory domain 00 apply failed`
+  during the reload (the firmware refuses the world domain), harmless.
+- **Fixed: BLE.** `btattach` from BlueZ 5.86 ORs the speed into
+  `c_cflag`, which gives B0 (hang up, RTS/DTR dropped) with glibc >= 2.42,
+  where `B500000` is 500000: the controller never answered HCI Reset.
+  Backported the upstream fix (`package/bluez5_utils/0001-*.patch`).
+  Tested: `btattach -B /dev/ttyS2 -P h4 -S 500000`, bluetoothctl LE scan
+  finds devices. `bluetoothctl` needs commands on stdin when not run
+  interactively.
 - To do: a data partition (`mmcblk0p2`). `rootfs_overlay/etc/default/datafs`
   still points `DATDEV` at `mmcblk0p1`, which is now the rootfs; nothing
   calls `/usr/bin/datafs` today, but fix this before using it, as it
   runs `mkfs.ext4` when the mount fails.
 - WiFi/BLE packages: `esp-hosted`, `wpa_supplicant` (nl80211),
-  `wireless-regdb` (done); to add: `iw`, `bluez5_utils` (client + tools
-  for `btattach`), `network_adapter.bin` for OTA. No Python, no espflash.
+  `wireless-regdb`, `iw`, `bluez5_utils` (client, monitor, tools); to
+  add: `network_adapter.bin` for OTA. No Python, no espflash.
 - Boot sequence (init script, to do):
   1. `modprobe esp32_spi` (udev already loads it from the device tree).
   2. If the ESP firmware version differs from the module version: load
      with `ota_file=/lib/firmware/esp-hosted/network_adapter.bin`, let
      the driver write the new app to the inactive OTA partition and
      reset the ESP, then load normally.
-  3. `btattach -B /dev/ttyS2 -P h4 -S 500000`.
+  3. `btattach -B /dev/ttyS2 -P h4 -S 500000` (started by hand for now).
 - To verify: whether the driver allows OTA while the firmware version
   does not match (it refuses normal operation on mismatch). If not, the
   OTA must happen with the old module before the module is updated,
@@ -285,8 +298,8 @@ Purpose: the normal product image, booting on its own from the SD NAND.
 3. ~~Firmware build script and binaries.~~ Done.
 4. ~~Flasher image: espflash, squashfs root, `tess-install`.~~ Done.
 5. Main image from the SD NAND: boots, WiFi scans work (SPI timeouts
-   fixed with `input-debounce`). Next: connect to an access point,
-   `btattach` + `bluetoothctl scan on`.
+   fixed with `input-debounce`), BLE scans work (btattach fix),
+   regulatory.db loads (S45regdb). Next: connect to an access point.
 6. Main image: data partition, init scripts, OTA update of the ESP
    firmware.
 7. U-Boot update (section 3.4), test FEL and SD NAND boot again.
@@ -298,6 +311,7 @@ Related TODOs:
   (see `readme.txt`).
 - Upstream: esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
   `esp-hosted` package update; espflash patch for non-enumerated ports;
+  Buildroot `bluez5_utils` btattach backport;
   Buildroot `python-esptool` 5.x misses its `rich_click`/`click`
   dependencies.
 - Flasher: `seedrng` cannot write `/var/lib/seedrng` on the read-only
