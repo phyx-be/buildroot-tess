@@ -1,0 +1,44 @@
+From 1957a0a709be477a2914d8535ac963cb462d1a9f Mon Sep 17 00:00:00 2001
+From: Bert Outtier <bert.outtier@spectricity.com>
+Date: Wed, 7 Oct 2026 14:59:32 +0200
+Subject: [PATCH] fix(network_adapter): authorize the station port if auth done
+ fails
+
+With WPA2, the host driver asks for a control port and sends
+CMD_STA_SET_AUTHORIZED after the 4-way handshake. On ESP32-C3 with
+ESP-IDF v6.1, esp_wifi_auth_done_internal() fails at that point, so the
+command fails, station_authorized stays 0 and all data except EAPOL is
+dropped: the station is associated but gets no IP address.
+
+Log a warning and authorize the port anyway, the keys are installed.
+---
+ esp/esp_driver/network_adapter/main/cmd.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/esp/esp_driver/network_adapter/main/cmd.c b/esp/esp_driver/network_adapter/main/cmd.c
+index c4ffeef..f49450f 100644
+--- a/esp/esp_driver/network_adapter/main/cmd.c
++++ b/esp/esp_driver/network_adapter/main/cmd.c
+@@ -2736,10 +2736,16 @@ int process_sta_set_authorized(uint8_t if_type, uint8_t *payload,
+         ESP_LOGD(TAG, "STA_PORT_AUTH_DONE seq=%u ipc_failed=%u",
+                  active_cmd_seq, auth_done_failed);
+         if (auth_done_failed) {
+-            cmd_status = CMD_RESPONSE_FAIL;
+-        } else {
+-            station_authorized = 1;
++            /*
++             * With the Wi-Fi libraries of ESP-IDF v6.1 this fails although
++             * the host completed the 4-way handshake and installed the keys,
++             * which left the data path closed for good. Open the port
++             * anyway: the keys are in place, so data can flow.
++             */
++            ESP_LOGW(TAG, "STA_PORT_AUTH seq=%u auth done failed, authorizing anyway",
++                     active_cmd_seq);
+         }
++        station_authorized = 1;
+     } else {
+         /* Deauthorization changes port authorization status without tearing
+          * down the 802.11 association. Do not disconnect the peer. */
+-- 
+2.53.0
+

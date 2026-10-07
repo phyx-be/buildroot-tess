@@ -2,9 +2,8 @@
 
 Status (2026-10-07): the flasher image flashes the ESP32-C3 and writes
 the main image to the SD NAND, and the main image boots from the SD
-NAND. WiFi over esp-hosted works (wlan0, scanning with iw and
-wpa_supplicant) and BLE over UART2 works (btattach, bluetoothctl LE
-scan). See section 6.
+NAND. WiFi over esp-hosted works (WPA2, DHCP, internet, 9 Mbit/s) and
+BLE over UART2 works (btattach, bluetoothctl LE scan). See section 6.
 
 Goals:
 
@@ -254,6 +253,20 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   LOSC by default (`Px_EINT_DEB` reset value 0), so it missed the short
   ESP32-C3 handshake/data-ready pulses. Fix in the Tess DTS:
   `&pio { input-debounce = <1 1 1 1 1 1>; }` (HOSC, 750 kHz sampling).
+- **Worked around: no data after connecting.** With WPA2 the driver and
+  the firmware keep the data path closed (EAPOL only) until
+  `CMD_STA_SET_AUTHORIZED`. The firmware's `esp_wifi_auth_done_internal()`
+  (closed Wi-Fi library) fails there, every time, also when retried 600 ms
+  later, so no DHCP. `esp32c3/patches/0002-*.patch` authorizes the port
+  anyway (with a warning). Tested: DHCP, ping, DNS, 10 MB download at
+  9.1 Mbit/s, no SPI timeouts. Suspected cause: esp-hosted-linux
+  `2c41cd4` (2026-10-01, removed the libwpa_supplicant linkage from the
+  firmware); to be confirmed by building from the commit before it.
+- **Open: reconnect.** After `wpa_cli disconnect` + `reconnect` the
+  driver loops (`auth timeout`, `Drop DISCONNECT_EVENT for unexpected
+  generation`); reloading `esp32_spi` recovers.
+- WiFi configuration: `/boot/wpa_supplicant.conf`; `/etc/rc.netif` (udev)
+  starts wpa_supplicant and ifplugd/udhcpc when wlan0 appears.
 - `iwlist` cannot scan (no WEXT), use `iw` or wpa_supplicant.
 - **Fixed: regulatory.db.** cfg80211 is built in (the esp-hosted package
   forces `CONFIG_CFG80211=y`) and tries to load `regulatory.db` before
@@ -301,7 +314,9 @@ Purpose: the normal product image, booting on its own from the SD NAND.
 4. ~~Flasher image: espflash, squashfs root, `tess-install`.~~ Done.
 5. Main image from the SD NAND: boots, WiFi scans work (SPI timeouts
    fixed with `input-debounce`), BLE scans work (btattach fix),
-   regulatory.db loads (S45regdb). Next: connect to an access point.
+   regulatory.db loads (S45regdb), WPA2 + DHCP work (firmware patch 0002).
+   Next: confirm the cause of the authorization failure upstream, fix the
+   reconnect loop.
 6. Main image: data partition, init scripts, OTA update of the ESP
    firmware.
 7. U-Boot update (section 3.4), test FEL and SD NAND boot again.
