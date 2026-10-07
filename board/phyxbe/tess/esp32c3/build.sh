@@ -17,6 +17,9 @@
 #   BR2_DL_DIR   Buildroot download directory, default: dl
 #
 # Output: board/phyxbe/tess/rootfs_overlay_flasher/lib/firmware/esp-hosted/
+#   tess-esp32c3.bin: all images merged into one, to be written at 0x0
+#   bootloader.bin, partition-table.bin, ota_data_initial.bin,
+#   network_adapter.bin and flash_args: the separate images
 
 set -eu
 
@@ -85,7 +88,9 @@ docker run --rm \
 	"espressif/idf:${IDF_TAG}" \
 	-c ". \"\${IDF_PATH}/export.sh\" >/dev/null && \
 	    idf.py -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.tess' \
-	           set-target esp32c3 build"
+	           set-target esp32c3 build && \
+	    cd build && python -m esptool --chip esp32c3 merge-bin \
+	           -o tess-esp32c3.bin @flash_args"
 
 # Collect the flash images
 B="${APP_DIR}/build"
@@ -96,6 +101,7 @@ cp "${B}/bootloader/bootloader.bin" \
    "${B}/ota_data_initial.bin" \
    "${B}/network_adapter.bin" \
    "${B}/flash_args" \
+   "${B}/tess-esp32c3.bin" \
    "${OUT_DIR}/"
 sed -i 's#[^ ]*/##g' "${OUT_DIR}/flash_args"	# keep file names only
 
