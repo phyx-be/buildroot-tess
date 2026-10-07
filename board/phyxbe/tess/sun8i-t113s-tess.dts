@@ -305,14 +305,10 @@
 	status = "okay";
 };
 
-&ohci0 {
-	status = "okay";
-};
-
-&ehci0 {
-	status = "okay";
-};
-
+/*
+ * No ehci0/ohci0: they share PHY 0 with usb_otg and would switch the
+ * USB-C port to host mode. USB1 (header P6) is the host port.
+ */
 &ohci1 {
 	status = "okay";
 };
