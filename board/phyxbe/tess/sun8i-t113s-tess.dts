@@ -14,7 +14,10 @@
 	compatible = "phyx,tess-t113", "allwinner,sun8i-t113s";
 
 	aliases {
-		serial3 = &uart3;
+		serial2 = &uart2;	/* ESP32-C3 BLE HCI */
+		serial3 = &uart3;	/* console */
+		serial4 = &uart4;	/* ESP32-C3 programming */
+		serial5 = &uart5;	/* feather */
 	};
 
 	chosen {
@@ -198,12 +201,6 @@
 	};
 
 	/omit-if-no-ref/
-	gpio_out_pe_pins: gpio-out-pe-pins {
-		pins = "PE10", "PE11"; /* esp-c3 boot/reset */
-		function = "gpio_out";
-	};
-
-	/omit-if-no-ref/
 	dsi_gpio_pd_pins: dsi-gpio-pd-pins {
 		pins = "PD14", "PD15";
 		function = "gpio_out";
@@ -214,6 +211,7 @@
 &uart2 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart2_pe_pins>;
+	uart-has-rtscts;
 	status = "okay";
 };
 
@@ -277,6 +275,16 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&spi0_pins>;
 	status = "okay";
+
+	wifi@0 {
+		compatible = "espressif,esp32-spi";
+		reg = <0>;
+		spi-max-frequency = <30000000>;
+		spi-cpol;					/* SPI mode 2 */
+		reset-gpios = <&pio 4 11 GPIO_ACTIVE_LOW>;	/* PE11: WiFi.EN */
+		handshake-gpios = <&pio 2 6 GPIO_ACTIVE_HIGH>;	/* PC6 */
+		data-ready-gpios = <&pio 3 22 GPIO_ACTIVE_HIGH>; /* PD22 */
+	};
 };
 
 /* feather spi */
