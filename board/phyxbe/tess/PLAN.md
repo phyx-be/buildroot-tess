@@ -283,7 +283,9 @@ Purpose: the normal product image, booting on its own from the SD NAND.
      with `ota_file=/lib/firmware/esp-hosted/network_adapter.bin`, let
      the driver write the new app to the inactive OTA partition and
      reset the ESP, then load normally.
-  3. `btattach -B /dev/ttyS2 -P h4 -S 500000` (started by hand for now).
+  3. `btattach -B /dev/ttyS2 -P h4 -S 500000`: done, `/etc/init.d/S41btattach`
+     (arguments in `/etc/default/btattach`) waits up to 20 s for wlan0,
+     i.e. for the ESP32-C3 firmware to run, then starts btattach.
 - To verify: whether the driver allows OTA while the firmware version
   does not match (it refuses normal operation on mismatch). If not, the
   OTA must happen with the old module before the module is updated,
