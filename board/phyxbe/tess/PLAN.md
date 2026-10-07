@@ -1,6 +1,9 @@
 # Tess: ESP32-C3 WiFi/BLE and image layout plan
 
-Status: plan, nothing implemented yet.
+Status (2026-10-07): the flasher image flashes the ESP32-C3 and writes
+the main image to the SD NAND, and the main image boots from the SD
+NAND. esp-hosted detects the ESP32-C3 and creates wlan0, but commands
+over SPI time out (see section 5). BLE is not tested yet. See section 6.
 
 Goals:
 
@@ -11,7 +14,7 @@ Goals:
 - Two images, each with its own defconfig:
   - a **flasher image**, booted over USB (FEL), that writes the main image
     to the soldered SD NAND on SDC0 and does the initial flash of the
-    ESP32-C3 over UART4 with Python and esptool;
+    ESP32-C3 over UART4 with espflash;
   - a **main image**, booting from SDC0 with its root filesystem on SDC0
     (no initramfs), that updates the ESP32-C3 firmware over SPI.
 
@@ -26,7 +29,7 @@ From the schematic (TESS_00.PDF, sheets 2 and 3):
 | SPI data ready            | PD22                  | GPIO4                             | esp-hosted C3 default                |
 | UART2 TX / RX             | PE2 / PE3             | GPIO18 (RX) / GPIO5 (TX)          | BLE HCI, firmware default pins       |
 | UART2 RTS / CTS           | PE0 / PE1             | GPIO8 (CTS) / GPIO19 (RTS)        | BLE HCI flow control                 |
-| UART4 TX / RX (UART_PROG) | PE4 / PE5             | GPIO20 (U0RXD) / GPIO21 (U0TXD)   | ROM bootloader, esptool              |
+| UART4 TX / RX (UART_PROG) | PE4 / PE5             | GPIO20 (U0RXD) / GPIO21 (U0TXD)   | ROM bootloader, espflash             |
 | ESP.BOOT                  | PE10                  | GPIO9                             | low at reset = download mode         |
 | WiFi.EN                   | PE11                  | EN                                | 100K pull-down: ESP off until driven |
 
@@ -44,6 +47,15 @@ Notes:
   (GPIO20/21), which is UART4 on the T113.
 - PC2-PC5 are also the T113 SPI boot pins. The ESP is held in reset by
   the EN pull-down while the T113 boot ROM probes SPI0.
+- **UART baud rates:** the T113 UARTs run from a 24 MHz clock (base baud
+  1500000), so only 1500000 / n is exact: 1500000, 750000, 500000, ...
+  (115200 is 0.16 % off). 460800 and 921600 are 8.5 % and 19 % off and
+  do not work. Hence 1500000 for flashing and 500000 for BLE HCI.
+
+Verified on the board (FEL image, 2026-10-07): the `wifi@0` node makes
+udev load `esp32_spi`, which probes in SPI mode 2 and toggles WiFi.EN;
+the ESP32-C3 ROM log is received on ttyS4 (`SPI_FAST_FLASH_BOOT`, blank
+flash).
 
 ## 2. esp-hosted findings
 
@@ -52,24 +64,25 @@ Notes:
   - Host driver: `host/`, GPL-2.0, built with `target=spi` into
     `esp32_spi.ko`.
   - Firmware: `esp/esp_driver/network_adapter/`, Apache-2.0, ESP-IDF v6.1
-    (commit pinned in `esp/esp_driver/.env`, plus patches applied by
-    `esp/esp_driver/setup.sh`).
+    (commit pinned in `esp/esp_driver/.env`, plus patches and WiFi
+    libraries applied by `esp/esp_driver/setup.sh`).
 - Device tree support (`compatible = "espressif,esp32-spi"`,
   `reset-gpios`, `handshake-gpios`, `data-ready-gpios`,
   `spi-max-frequency`, `spi-cpol`) exists **only on master**, not in the
-  `release/ng-1.0.6` tag. Pin a master commit.
+  `release/ng-1.0.6` tag. Pinned master commit: `599c47c` (2026-10-07).
 - Host driver and firmware versions must match exactly: the driver
-  compares version strings and refuses a mismatch. Build both from the
-  same commit.
-- Kernel compatibility guards go up to 7.1 and mention 6.18. Upstream CI
-  only builds for x86, so an ARM32 build against 6.18.8 is unverified.
+  compares version strings and refuses a mismatch. Both are built from
+  the same commit and report `NG-1.0.6.0.14`.
+- The driver builds without warnings for ARM32 against 6.18.8.
 - The driver pulses `reset-gpios` at probe (500 ms boot wait) and owns
   that GPIO while bound.
 - Bluetooth: with `CONFIG_BT_CTRL_HCI_MODE_UART_H4=y` the firmware
-  exposes HCI on UART1 (TX=GPIO5, RX=GPIO18, RTS=GPIO19, CTS=GPIO8),
-  921600 baud by default (`CONFIG_EXAMPLE_HCI_UART_BAUDRATE`), RTS/CTS
-  always on. The host driver registers no HCI device in that mode;
-  attach with `btattach -B /dev/ttyS2 -P h4 -S 921600`.
+  exposes HCI on UART1 (TX=GPIO5, RX=GPIO18, RTS=GPIO19, CTS=GPIO8) at
+  `CONFIG_EXAMPLE_HCI_UART_BAUDRATE` (Tess: 500000), RTS/CTS always on.
+  The host driver registers no HCI device in that mode; attach with
+  `btattach -B /dev/ttyS2 -P h4 -S 500000`.
+- The HCI UART code did not build with ESP-IDF v6.1 (GDMA API change):
+  fixed by `esp32c3/patches/0001-*.patch`, to be sent upstream.
 - No prebuilt firmware binaries in the repo or the releases.
 - The driver supports in-band firmware update over the transport with
   the `ota_file=` module parameter (`docs/guides/ota.md`). This is the
@@ -77,21 +90,20 @@ Notes:
 
 ## 3. Common parts (both images)
 
-### 3.1 Kernel module package
+### 3.1 Kernel module package (done)
 
-- Update `package/esp-hosted` to `esp-hosted-linux` at a pinned master
+- `package/esp-hosted` points to `esp-hosted-linux` at the pinned
   commit: `ESP_HOSTED_MODULE_SUBDIRS = host`, `target=spi`, license file
-  `host/LICENSE`, hash file. Keep it upstreamable for Buildroot.
-- Drop `board/phyxbe/tess/patches/esp-hosted/0001-dt-fixes.patch` and the
-  `esp-hosted-sergey` override in `local.mk`.
-- If ARM32/6.18 fixes are needed: work in a local checkout, use it with
-  `ESP_HOSTED_OVERRIDE_SRCDIR`, and turn the fixes into patches (and
-  upstream pull requests).
-- Kernel config: `CONFIG_BT`, `CONFIG_BT_HCIUART`,
-  `CONFIG_BT_HCIUART_H4`, `CONFIG_CFG80211` (package fixups or
-  `linux.defconfig`/fragment).
+  `host/LICENSE`. The Linux 7.1 build fix patch was dropped (already in
+  master). Kept upstreamable for Buildroot.
+- Dropped `board/phyxbe/tess/patches/esp-hosted/0001-dt-fixes.patch`; the
+  `esp-hosted-sergey` override in the (untracked) `local.mk` is
+  commented out.
+- Kernel config: `bluetooth.frag` (`CONFIG_BT`, `CONFIG_BT_HCIUART`,
+  `CONFIG_BT_HCIUART_H4`). `CONFIG_BT` must be in the fragment itself,
+  `sunxi_defconfig` has it disabled. `CONFIG_CFG80211` is already on.
 
-### 3.2 Device tree
+### 3.2 Device tree (done)
 
 ```dts
 aliases {
@@ -118,79 +130,143 @@ aliases {
 };
 ```
 
-- The aliases give stable tty names (today UART2 shows up as ttyS0 and
-  UART4 as ttyS1).
-- Drop the unused `gpio_out_pe_pins` group. PE10 (BOOT) stays a plain
-  GPIO for user space (libgpiod, line offset 4 * 32 + 10 = 138).
+- The unused `gpio_out_pe_pins` group is dropped. PE10 (BOOT) is a plain
+  GPIO for user space (libgpiod, line offset 4 * 32 + 10 = 138, PE11 is
+  139).
 
-### 3.3 ESP32-C3 firmware
+### 3.3 ESP32-C3 firmware (done)
 
-- Build outside Buildroot (ESP-IDF downloads several GB of toolchains,
-  which does not fit the Buildroot model): a script in
-  `board/phyxbe/tess/esp32c3/` that builds in the official
-  `espressif/idf` Docker image, with
-  - the same esp-hosted-linux commit as the kernel module,
-  - the `setup.sh` patches applied to ESP-IDF,
-  - a Tess `sdkconfig.defaults` addition: target esp32c3, SPI transport,
-    `CONFIG_BT_CTRL_HCI_MODE_UART_H4=y`, HCI baudrate, console on UART0.
-- Output: `bootloader.bin`, `partition-table.bin`,
-  `ota_data_initial.bin`, `network_adapter.bin` and `flash_args`
-  (offsets from the IDF build, two OTA partitions on 4 MB flash).
-- A small `esp-hosted-firmware` package installs them in
-  `/lib/firmware/esp-hosted/`. Open: binaries in a release tarball
-  (download + hash) or committed in the repo.
+- Built outside Buildroot (ESP-IDF downloads several GB of toolchains,
+  which does not fit the Buildroot model): `esp32c3/build.sh` builds in
+  the `espressif/idf` Docker image, with
+  - the esp-hosted-linux commit read from `package/esp-hosted/esp-hosted.mk`,
+  - ESP-IDF at the pinned commit with the `setup.sh` patches and WiFi
+    libraries (checkout kept in `~/.cache/tess-esp32c3`),
+  - `esp32c3/patches/*.patch` applied to esp-hosted-linux,
+  - `esp32c3/sdkconfig.defaults.tess`: SPI transport,
+    `CONFIG_BT_CTRL_HCI_MODE_UART_H4=y`, HCI at 500000 baud, console on
+    UART0 only, USB-Serial-JTAG disabled.
+- Output, committed in `rootfs_overlay_flasher/lib/firmware/esp-hosted/`:
+  `tess-esp32c3.bin` (all images merged, written at 0x0, used by
+  espflash), the separate `bootloader.bin` (0x0), `partition-table.bin`
+  (0x8000), `ota_data_initial.bin` (0xd000), `network_adapter.bin`
+  (0x10000), `flash_args`, `VERSION` and `SHA256SUMS`. Two OTA
+  partitions on 4 MB flash.
 
-## 4. Flasher image: `configs/phyxbe_tess_flasher_defconfig`
+### 3.4 U-Boot update (to do)
 
-Purpose: factory/recovery image. Booted over USB with sunxi-fel, runs
-from an initramfs, writes the main image to SDC0 and flashes the ESP32-C3
-over UART4.
+Both defconfigs still use U-Boot 2024.01-rc4, a release candidate, with
+`board/phyxbe/tess/uboot/tess_defconfig` and its own device tree
+`board/phyxbe/tess/uboot/sun8i-t113s-tess.dts`.
 
-- Boot: FEL, like today (`flash.sh`, `uboot/boot.cmd`, initramfs at
-  `0x43300000` with `initrd_high=ffffffff`).
-- Contents, kept minimal to fit in RAM (128 MB, about 80 MB free):
-  BusyBox, `python3` (PYC only), `python-esptool`, `libgpiod2` tools,
-  e2fsprogs, the ESP32-C3 firmware (all four binaries + `flash_args`),
-  USB gadget support. No WiFi, BLE, display or other main-image packages.
-- Writing the main image to SDC0: export `/dev/mmcblk0` as a USB
-  mass-storage gadget (configfs `mass_storage`), so the host writes
-  `sdcard.img` with `dd` or `bmaptool`. The image never has to fit in
-  the board's RAM. (Alternative: stream it over the USB network gadget,
-  `ssh root@tess 'dd of=/dev/mmcblk0' < sdcard.img`.)
-- ESP32-C3 initial flash, at boot (init script):
-  1. PE10 (BOOT) low, pulse PE11 (EN) low/high: ROM download mode.
-  2. `esptool --chip esp32c3 -p /dev/ttyS4 -b 460800 --before no-reset
-     --after no-reset write-flash @flash_args` (skip when
-     `verify-flash` already matches).
-  3. Release PE10, pulse PE11: boot the new firmware; check its boot log
-     on ttyS4.
-- Status reporting on the console (UART3), the LEDs and/or the display.
-- Size risk: `python-esptool` pulls in `python-cryptography` (Rust build
-  on the build machine, several MB on target). Measure the unpacked
-  initramfs; if too large, look at esptool without cryptography or at
-  esp-serial-flasher as a fallback.
+- Version: 2026.01, the same as `mangopi_mq1rdw2_defconfig` (like the
+  kernel).
+- `tess_defconfig` is the upstream `mangopi_mq_r_defconfig` with only
+  `CONFIG_DEFAULT_DEVICE_TREE` changed. Replace it with
+  `BR2_TARGET_UBOOT_BOARD_DEFCONFIG="mangopi_mq_r"` plus a fragment
+  (`BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES`) holding the Tess changes, so
+  future bumps pick up upstream defconfig changes.
+- Enable device tree overlay support (`CONFIG_OF_LIBFDT_OVERLAY`) in that
+  fragment, for the DSI display overlay (see the TODOs).
+- Add `BR2_TARGET_UBOOT_NEEDS_GNUTLS=y` (the MangoPi defconfig has it for
+  U-Boot 2026.01).
+- Device tree: recent U-Boot builds sunxi device trees from
+  `dts/upstream` (`CONFIG_OF_UPSTREAM`, names like
+  `allwinner/sun8i-t113s-mangopi-mq-r-t113`) and no longer ships
+  `arch/arm/dts/sun8i-t113s.dtsi`. To verify: how the custom Tess DTS
+  (`BR2_TARGET_UBOOT_CUSTOM_DTS_PATH`) fits in that, or whether U-Boot can
+  use the kernel DTS. Ideally there is one Tess DTS for both.
+- Environment: `CONFIG_ENV_IS_IN_FAT` looks for `uboot.env` on a FAT
+  partition that does not exist ("Unable to read uboot.env" at every
+  boot). Either `CONFIG_ENV_IS_NOWHERE`, or an environment in a raw area
+  of the SD NAND if it must be writable.
+- `board/phyxbe/tess/uboot/uenv.txt` is not used by anything (it comes
+  from another project): remove it.
+- Both images use the same U-Boot settings; keep the two defconfigs in
+  sync.
+- Test both boot paths: FEL with the flasher image (`boot.scr` at
+  `0x43100000`) and distro boot of the main image from the SD NAND
+  (extlinux). The `ums` and `dfu` commands are still enabled and can
+  later be used for factory flashing over USB.
 
-## 5. Main image: `configs/phyxbe_tess_defconfig`
+## 4. Flasher image: `configs/phyxbe_tess_flasher_defconfig` (works)
+
+Purpose: factory/recovery image. Booted over USB with sunxi-fel, writes
+the main image to SDC0 and flashes the ESP32-C3 over UART4.
+
+- Boot: FEL, `board/phyxbe/tess/flash.sh output-flasher` loads U-Boot,
+  kernel, DTB, `boot.scr` and `rootfs.squashfs.uboot` (at `0x43300000`,
+  `initrd_high=ffffffff`).
+- Root filesystem: **xz squashfs loaded as initrd into `/dev/ram0`**
+  (`root=/dev/ram0 ro`, `flasher.frag`: `SQUASHFS`, `SQUASHFS_XZ`,
+  `BLK_DEV_RAM` up to 64 MB). It stays compressed in RAM, unlike an
+  initramfs, which needed the compressed and the unpacked copy at the
+  same time and did not fit in the 128 MB (about 80 MB free) with Python.
+  `post-image-flasher.sh` wraps it in a U-Boot ramdisk header. Note:
+  classic initrd support is marked for removal in the kernel (only the
+  `/linuxrc` path is deprecated in 6.18).
+- No Python: esptool 5 needs `rich_click`, which Buildroot does not
+  package, plus `python-cryptography`. The flasher uses **espflash**
+  (Buildroot package, Rust) instead. espflash only accepted ports listed
+  by the serialport crate, which does not list the T113 UARTs: fixed by
+  `package/espflash/0001-*.patch` (to be sent upstream).
+- Contents: BusyBox, espflash, `libgpiod2` tools, e2fsprogs, the
+  ESP32-C3 firmware and the main image (`/usr/share/tess/sdcard.img.xz`,
+  xz -6 so busybox xzcat needs little RAM, plus `sdcard.img.info` with
+  its size and SHA-256), added by `post-build-flasher.sh` from
+  `output/images/sdcard.img`. The main image must be built first.
+- No esp-hosted module (it would own WiFi.EN), no WiFi packages.
+- `esp32c3-flash`:
+  1. PE10 (BOOT) low, pulse PE11 (EN): ROM download mode (gpioset).
+  2. `espflash write-bin --chip esp32c3 --port /dev/ttyS4 --baud 1500000
+     --before no-reset --after no-reset --non-interactive 0x0
+     tess-esp32c3.bin` (skips unchanged regions, verifies).
+  3. Release PE10, reset the ESP, check its boot log on ttyS4. WiFi.EN
+     stays driven high by a background gpioset.
+- `tess-install`: run `esp32c3-flash` first (on failure the SD NAND is
+  left untouched), then write `sdcard.img.xz` to `/dev/mmcblk0` and verify it
+  against the SHA-256. Run by hand for now.
+- Once the SD NAND has a boot image, FEL needs SW2 + SW1 again (a
+  `reboot` boots the SD NAND).
+- Tested 2026-10-07: boots over FEL (squashfs in `/dev/ram0`, 70 MB RAM
+  free), `tess-install` takes 1.5 minutes (espflash at 1500000 baud,
+  verified, then the SD NAND written and verified).
+
+## 5. Main image: `configs/phyxbe_tess_defconfig` (boots from the SD NAND)
 
 Purpose: the normal product image, booting on its own from the SD NAND.
 
-- No initramfs: root filesystem as ext4 on SDC0.
-- `genimage.cfg`: U-Boot SPL at 8 KiB (T113 boot ROM boots from SDC0),
-  a boot partition (kernel, DTB, boot script or extlinux), rootfs, and a
-  data partition (see `rootfs_overlay/usr/bin/datafs`).
-- U-Boot: boot from mmc0 (boot script or `extlinux.conf`, which already
-  exists in the overlay), `root=/dev/mmcblk0pN rootwait`.
-- WiFi/BLE packages: `esp-hosted`, `esp-hosted-firmware` (only
-  `network_adapter.bin` is needed here), `wpa_supplicant` (nl80211),
-  `iw`, `bluez5_utils` (client + tools for `btattach`),
-  `wireless-regdb`. No Python and no esptool.
-- Boot sequence (init script):
-  1. `modprobe esp32_spi`.
+- Done: no initramfs, 128 MB ext4 root filesystem. `genimage.cfg`:
+  U-Boot SPL at 8 KiB, one bootable rootfs partition (`mmcblk0p1`).
+  U-Boot's distro boot loads `/boot/extlinux/extlinux.conf` (kernel and
+  DTB in `/boot`). The boot script and sunxi-fel host tools moved to
+  the flasher.
+- `reboot` needs the watchdog: the SoC dtsi has it `reserved`, the Tess
+  DTS enables it, so `sunxi-wdt` provides the restart handler.
+- Tested 2026-10-07: SPL, U-Boot distro boot (extlinux), ext4 root on
+  `mmcblk0p1`. esp32_spi gets the boot-up event, detects the ESP32-C3,
+  switches SPI to 30 MHz, versions match (`NG-1.0.6.0.14`), and wlan0
+  appears after a few retries. **Open problem:** commands time out
+  (`CMD_TIMEOUT`), and their response arrives with the next command
+  (`CMD_RESP_MISMATCH expected=7/3 got=3/2`): the host misses the ESP's
+  data-ready, or does not act on it. A scan returns no results. Suspects:
+  the edge-triggered handshake/data-ready IRQs vs. the work function's
+  GPIO reads on the sunxi pin controller, the SPI clock (try lower than
+  30 MHz). `iwlist` cannot scan (no WEXT), use `iw` or wpa_supplicant.
+- To do: a data partition (`mmcblk0p2`). `rootfs_overlay/etc/default/datafs`
+  still points `DATDEV` at `mmcblk0p1`, which is now the rootfs; nothing
+  calls `/usr/bin/datafs` today, but fix this before using it, as it
+  runs `mkfs.ext4` when the mount fails.
+- WiFi/BLE packages: `esp-hosted`, `wpa_supplicant` (nl80211),
+  `wireless-regdb` (done); to add: `iw`, `bluez5_utils` (client + tools
+  for `btattach`), `network_adapter.bin` for OTA. No Python, no espflash.
+- Boot sequence (init script, to do):
+  1. `modprobe esp32_spi` (udev already loads it from the device tree).
   2. If the ESP firmware version differs from the module version: load
      with `ota_file=/lib/firmware/esp-hosted/network_adapter.bin`, let
      the driver write the new app to the inactive OTA partition and
      reset the ESP, then load normally.
-  3. `btattach -B /dev/ttyS2 -P h4 -S 921600`.
+  3. `btattach -B /dev/ttyS2 -P h4 -S 500000`.
 - To verify: whether the driver allows OTA while the firmware version
   does not match (it refuses normal operation on mismatch). If not, the
   OTA must happen with the old module before the module is updated,
@@ -200,33 +276,37 @@ Purpose: the normal product image, booting on its own from the SD NAND.
 
 ## 6. Steps
 
-1. Finish the Buildroot 2026.08 / kernel 6.18.8 bring-up (current work).
-2. Kernel module: update the `esp-hosted` package, build for ARM32 6.18.8,
-   add the device tree changes.
-3. Firmware: Docker build script, first binaries, `esp-hosted-firmware`
-   package.
-4. Manual bring-up from the current FEL image: flash the ESP by hand
-   over ttyS4, load the module, `iw dev wlan0 scan`, `wpa_supplicant`,
-   then `btattach` + `bluetoothctl scan on`.
-5. Flasher defconfig: minimal initramfs, mass-storage gadget, automatic
-   ESP flash.
-6. Main defconfig: SD NAND boot (genimage, U-Boot, rootfs on SDC0), init
-   scripts, OTA update of the ESP firmware.
-7. Update `readme.txt` for both images.
+1. ~~Buildroot 2026.08 / kernel 6.18.8 bring-up.~~ Done, display works.
+2. ~~Kernel module and device tree.~~ Done, probes on the board.
+3. ~~Firmware build script and binaries.~~ Done.
+4. ~~Flasher image: espflash, squashfs root, `tess-install`.~~ Done.
+5. Main image from the SD NAND: boots. Next: fix the esp-hosted SPI
+   command timeouts, then `iw dev wlan0 scan`, `wpa_supplicant`,
+   `btattach` + `bluetoothctl scan on`.
+6. Main image: data partition, init scripts, OTA update of the ESP
+   firmware.
+7. U-Boot update (section 3.4), test FEL and SD NAND boot again.
+8. Update `readme.txt` for both images.
 
 Related TODOs:
 
-- When updating U-Boot, enable device tree overlay support
-  (`CONFIG_OF_LIBFDT_OVERLAY`).
 - Move the Raspberry Pi 7" DSI display into a device tree overlay
   (see `readme.txt`).
+- Upstream: esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
+  `esp-hosted` package update; espflash patch for non-enumerated ports;
+  Buildroot `python-esptool` 5.x misses its `rich_click`/`click`
+  dependencies.
+- Flasher: `seedrng` cannot write `/var/lib/seedrng` on the read-only
+  root (harmless warning); espflash's progress bar floods the console.
 
-## 7. Open decisions
+## 7. Decisions
 
-1. Firmware binaries: release tarball (download + hash) or committed in
-   this repository?
-2. `esp-hosted` package: update Buildroot's own package (upstreamable) or
-   a Tess-only package?
-3. Flasher: USB mass storage (host writes with dd/bmaptool) or streaming
-   over the USB network gadget?
-4. BLE HCI baudrate: keep 921600 or go higher?
+1. Firmware binaries: committed in this repository, in the flasher
+   rootfs overlay.
+2. `esp-hosted` package: Buildroot's own package is updated
+   (upstreamable).
+3. Flasher: the main image is embedded in the flasher image and written
+   by `tess-install` on the board.
+4. BLE HCI baudrate: 500000 (exact on the T113 UART).
+5. Flashing tool: espflash, no Python in the flasher image.
+6. U-Boot version: 2026.01, as the MangoPi defconfig.
