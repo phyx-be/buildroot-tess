@@ -10,6 +10,10 @@ ESP-IDF v6.1, esp_wifi_auth_done_internal() fails at that point, so the
 command fails, station_authorized stays 0 and all data except EAPOL is
 dropped: the station is associated but gets no IP address.
 
+This started with the move to ESP-IDF v6.1 (merge 4ddec53): it works with
+ffe2af4, built with ESP-IDF v5.5.1, while the firmware code for this
+command did not change.
+
 Log a warning and authorize the port anyway, the keys are installed.
 ---
  esp/esp_driver/network_adapter/main/cmd.c | 12 +++++++++---

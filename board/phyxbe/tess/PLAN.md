@@ -259,9 +259,18 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   (closed Wi-Fi library) fails there, every time, also when retried 600 ms
   later, so no DHCP. `esp32c3/patches/0002-*.patch` authorizes the port
   anyway (with a warning). Tested: DHCP, ping, DNS, 10 MB download at
-  9.1 Mbit/s, no SPI timeouts. Suspected cause: esp-hosted-linux
-  `2c41cd4` (2026-10-01, removed the libwpa_supplicant linkage from the
-  firmware); to be confirmed by building from the commit before it.
+  9.1 Mbit/s, no SPI timeouts.
+  Bisected (driver and firmware built from the same commit, firmware
+  without patch 0002, WPA2-PSK):
+  - `ffe2af4` (SPI device tree merge, ESP-IDF v5.5.1, includes the size
+    reduction `2c41cd4`): works, `STA_SET_AUTHORIZED` succeeds, DHCP ok.
+  - `4ddec53` (merge of feature/idf-v6.1: ESP-IDF v6.1 and its Wi-Fi
+    libraries 3ab2604c): fails.
+  The firmware code for this command and the declaration of
+  `esp_wifi_auth_done_internal()` did not change in that merge, so the
+  behaviour changed inside the closed v6.1 Wi-Fi libraries: it either
+  fails now, or returns true on success (inverting the firmware's
+  check). To report upstream (esp-hosted-linux).
 - **Open: reconnect.** After `wpa_cli disconnect` + `reconnect` the
   driver loops (`auth timeout`, `Drop DISCONNECT_EVENT for unexpected
   generation`); reloading `esp32_spi` recovers.
@@ -326,7 +335,9 @@ Related TODOs:
 
 - Move the Raspberry Pi 7" DSI display into a device tree overlay
   (see `readme.txt`).
-- Upstream: esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
+- Upstream: esp-hosted-linux issue: `CMD_STA_SET_AUTHORIZED` fails with
+  the ESP-IDF v6.1 Wi-Fi libraries (bisected to `4ddec53`), plus the
+  reconnect loop; esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
   `esp-hosted` package update; espflash patch for non-enumerated ports;
   Buildroot `bluez5_utils` btattach backport;
   Buildroot `python-esptool` 5.x misses its `rich_click`/`click`
