@@ -52,3 +52,13 @@ Booting over USB (FEL)
 The board boots with the root filesystem in RAM. The console is available
 on UART3, see above. Once booted, the board also exposes a CDC-ECM/RNDIS
 USB network gadget.
+
+TODO
+====
+
+- Move the Raspberry Pi 7" DSI display (panel, display MCU, GT911
+  touchscreen, touch regulator and backlight) out of
+  sun8i-t113s-tess.dts into a device tree overlay, so the base board
+  boots cleanly without a display attached. This needs U-Boot overlay
+  support (CONFIG_OF_LIBFDT_OVERLAY), a DTB built with symbols (-@) and
+  an extra FEL write in flash.sh.
