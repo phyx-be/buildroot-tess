@@ -46,6 +46,14 @@
 		};
 	};
 
+	backlight: backlight {
+		compatible = "pwm-backlight";
+		pwms = <&display_mcu 0 255 0>;
+		brightness-levels = <0 255>;
+		num-interpolated-steps = <255>;
+		default-brightness-level = <255>;
+	};
+
 	/* board wide 5V supply directly from the USB-C socket */
 	reg_vcc5v: regulator-5v {
 		compatible = "regulator-fixed";
@@ -110,16 +118,9 @@
 	panel: panel@0 {
 		reg = <0>;
 		compatible = "raspberrypi,dsi-7inch";
-		reset-gpio = <&display_mcu 0 GPIO_ACTIVE_LOW>;
-		backlight = <&display_mcu>;
+		reset-gpios = <&display_mcu 0 GPIO_ACTIVE_LOW>;
+		backlight = <&backlight>;
 		power-supply = <&reg_3v3>;
-		status = "okay";
-
-		port {
-			panel_in: endpoint {
-				remote-endpoint = <&tcon_lcd0_out_dsi>;
-			};
-		};
 	};
 };
 
@@ -246,10 +247,11 @@
 	status = "okay";
 
 	display_mcu: display_mcu@45 {
-		compatible = "raspberrypi,v2-touchscreen-panel-regulator";
+		compatible = "raspberrypi,touchscreen-panel-regulator-v2";
 		reg = <0x45>;
 		gpio-controller;
 		#gpio-cells = <2>;
+		#pwm-cells = <3>;
 	};
 
 	gt911: gt911@5d {
