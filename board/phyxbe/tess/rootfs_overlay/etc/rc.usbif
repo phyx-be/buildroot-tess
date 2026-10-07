@@ -11,6 +11,11 @@ PATH=/usr/sbin:/sbin:/usr/bin:/bin
 gadget_folder="/sys/kernel/config/usb_gadget"
 g="${gadget_folder}/tess"
 
+# USB_GADGET: "ethernet" (CDC ECM + RNDIS, bridged in br0) or "serial"
+# (CDC ACM, /dev/ttyGS0 on the board)
+USB_GADGET="ethernet"
+[ -r /etc/default/usbgadget ] && . /etc/default/usbgadget
+
 gadget_usb_up() {
     udc_device=$1
 
@@ -56,6 +61,31 @@ gadget_usb_up() {
     echo "${prod}" > ${g}/strings/0x409/product
     echo "${serial}" > ${g}/strings/0x409/serialnumber
 
+    case "${USB_GADGET}" in
+        serial) gadget_serial ;;
+        *) gadget_ethernet ;;
+    esac
+
+    udevadm settle -t 5 || :
+    echo "${udc_device}" > ${g}/UDC
+
+    echo "Done."
+}
+
+# A single CDC ACM serial port, /dev/ttyGS0 on the board
+gadget_serial() {
+    mkdir ${g}/configs/c.1
+    echo "${attr}" > ${g}/configs/c.1/bmAttributes
+    echo "${pwr}" > ${g}/configs/c.1/MaxPower
+    mkdir ${g}/configs/c.1/strings/0x409
+    echo "ACM" > ${g}/configs/c.1/strings/0x409/configuration
+
+    mkdir ${g}/functions/acm.GS0
+    ln -s ${g}/functions/acm.GS0 ${g}/configs/c.1
+}
+
+# CDC ECM (Linux, macOS) and RNDIS (Windows) network functions
+gadget_ethernet() {
     # Create 2 configurations. The first will be CDC. The second will be RNDIS.
     # Thanks to os_desc, Windows should use the second configuration.
 
@@ -107,10 +137,6 @@ gadget_usb_up() {
     ln -s ${g}/functions/ecm.usb0 ${g}/configs/c.1
     ln -s ${g}/functions/rndis.usb0 ${g}/configs/c.2
     ln -s ${g}/configs/c.2 ${g}/os_desc
-    udevadm settle -t 5 || :
-    echo "${udc_device}" > ${g}/UDC
-
-    echo "Done."
 }
 
 gadget_usb_down() {
@@ -131,7 +157,9 @@ gadget_usb_down() {
     rm -f ${g}/os_desc/c.2
     rm -f ${g}/configs/c.2/rndis.usb0
     rm -f ${g}/configs/c.1/ecm.usb0
+    rm -f ${g}/configs/c.1/acm.GS0
     [ -d ${g}/functions/ecm.usb0 ] && rmdir ${g}/functions/ecm.usb0
+    [ -d ${g}/functions/acm.GS0 ] && rmdir ${g}/functions/acm.GS0
     [ -d ${g}/functions/rndis.usb0 ] && rmdir ${g}/functions/rndis.usb0
     [ -d ${g}/configs/c.2/strings/0x409 ] && rmdir ${g}/configs/c.2/strings/0x409
     [ -d ${g}/configs/c.2 ] && rmdir ${g}/configs/c.2

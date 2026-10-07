@@ -16,8 +16,14 @@ Board features:
 How to build
 ============
 
+Two images: the main image, booting from the SD NAND, and a flasher
+image, booted over USB (FEL), that installs the main image and flashes
+the ESP32-C3. The flasher embeds the main image, so build that first:
+
 $ make phyxbe_tess_defconfig
 $ make
+$ make O=output-flasher phyxbe_tess_flasher_defconfig
+$ make O=output-flasher
 
 Serial console
 ==============
@@ -34,8 +40,21 @@ Do not connect the VCC pin of the adapter, and do not use a 5V adapter.
 
 $ picocom -b 115200 /dev/ttyUSB0
 
-Booting over USB (FEL)
-======================
+USB console
+===========
+
+The main image is a USB serial device (CDC ACM) on the USB-C connector,
+with a login console on ttyGS0. On a Linux host:
+
+$ picocom /dev/ttyACM0
+
+The gadget type is set in /etc/default/usbgadget: "serial" in the main
+image, "ethernet" (CDC ECM + RNDIS network) in the flasher image.
+ModemManager probes the port once when it appears, which can show a
+"Login incorrect" on the console.
+
+Installing over USB (FEL)
+=========================
 
 1. Connect the USB-C connector to the host.
 2. Hold SW2 (pulls SDC0 CLK low, disabling the on-board storage) and
@@ -44,14 +63,25 @@ Booting over USB (FEL)
 
    $ ./output/host/bin/sunxi-fel version
 
-3. From the top-level buildroot directory, load and start U-Boot, the
-   kernel, the device tree and the initramfs:
+3. From the top-level buildroot directory, load and start the flasher
+   image:
 
-   $ ./board/phyxbe/tess/flash.sh
+   $ ./board/phyxbe/tess/flash.sh output-flasher
 
-The board boots with the root filesystem in RAM. The console is available
-on UART3, see above. Once booted, the board also exposes a CDC-ECM/RNDIS
-USB network gadget.
+4. Log in on the console (UART3, see above) and run:
+
+   # tess-install
+
+   It flashes the ESP32-C3 firmware over UART4 and writes the main image
+   to the SD NAND. Then reset the board without SW2 to boot it.
+
+WiFi: write /boot/wpa_supplicant.conf on the board, e.g.
+
+   # { echo "ctrl_interface=/var/run/wpa_supplicant"
+       wpa_passphrase "<ssid>" "<password>" | grep -v '#psk'
+     } > /boot/wpa_supplicant.conf
+
+and reboot. The country is set in /etc/default/regdomain.
 
 TODO
 ====
