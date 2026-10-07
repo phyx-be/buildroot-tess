@@ -1,0 +1,14 @@
+# Tess on top of the upstream mangopi_mq_r_defconfig (same T113-S3 and
+# DRAM settings, console on UART3)
+
+# Device tree: the Tess DTS, shared with Linux and copied to arch/arm/dts
+# by Buildroot (BR2_TARGET_UBOOT_CUSTOM_DTS_PATH), so not from dts/upstream
+# CONFIG_OF_UPSTREAM is not set
+CONFIG_DEFAULT_DEVICE_TREE="sun8i-t113s-tess"
+
+# Device tree overlays (e.g. the DSI display)
+CONFIG_OF_LIBFDT_OVERLAY=y
+
+# No persistent environment: there is no FAT partition for uboot.env
+# CONFIG_ENV_IS_IN_FAT is not set
+CONFIG_ENV_IS_NOWHERE=y

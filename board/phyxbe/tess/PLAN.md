@@ -153,41 +153,25 @@ aliases {
   (0x10000), `flash_args`, `VERSION` and `SHA256SUMS`. Two OTA
   partitions on 4 MB flash.
 
-### 3.4 U-Boot update (to do)
+### 3.4 U-Boot (done)
 
-Both defconfigs still use U-Boot 2024.01-rc4, a release candidate, with
-`board/phyxbe/tess/uboot/tess_defconfig` and its own device tree
-`board/phyxbe/tess/uboot/sun8i-t113s-tess.dts`.
+U-Boot 2026.01, the same as `mangopi_mq1rdw2_defconfig`, in both images:
 
-- Version: 2026.01, the same as `mangopi_mq1rdw2_defconfig` (like the
-  kernel).
-- `tess_defconfig` is the upstream `mangopi_mq_r_defconfig` with only
-  `CONFIG_DEFAULT_DEVICE_TREE` changed. Replace it with
-  `BR2_TARGET_UBOOT_BOARD_DEFCONFIG="mangopi_mq_r"` plus a fragment
-  (`BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES`) holding the Tess changes, so
-  future bumps pick up upstream defconfig changes.
-- Enable device tree overlay support (`CONFIG_OF_LIBFDT_OVERLAY`) in that
-  fragment, for the DSI display overlay (see the TODOs).
-- Add `BR2_TARGET_UBOOT_NEEDS_GNUTLS=y` (the MangoPi defconfig has it for
-  U-Boot 2026.01).
-- Device tree: recent U-Boot builds sunxi device trees from
-  `dts/upstream` (`CONFIG_OF_UPSTREAM`, names like
-  `allwinner/sun8i-t113s-mangopi-mq-r-t113`) and no longer ships
-  `arch/arm/dts/sun8i-t113s.dtsi`. To verify: how the custom Tess DTS
-  (`BR2_TARGET_UBOOT_CUSTOM_DTS_PATH`) fits in that, or whether U-Boot can
-  use the kernel DTS. Ideally there is one Tess DTS for both.
-- Environment: `CONFIG_ENV_IS_IN_FAT` looks for `uboot.env` on a FAT
-  partition that does not exist ("Unable to read uboot.env" at every
-  boot). Either `CONFIG_ENV_IS_NOWHERE`, or an environment in a raw area
-  of the SD NAND if it must be writable.
-- `board/phyxbe/tess/uboot/uenv.txt` is not used by anything (it comes
-  from another project): remove it.
-- Both images use the same U-Boot settings; keep the two defconfigs in
-  sync.
-- Test both boot paths: FEL with the flasher image (`boot.scr` at
-  `0x43100000`) and distro boot of the main image from the SD NAND
-  (extlinux). The `ums` and `dfu` commands are still enabled and can
-  later be used for factory flashing over USB.
+- `BR2_TARGET_UBOOT_BOARD_DEFCONFIG="mangopi_mq_r"` (same T113-S3, DRAM
+  settings and UART3 console) plus `uboot/tess.fragment`:
+  - `CONFIG_DEFAULT_DEVICE_TREE="sun8i-t113s-tess"` with `OF_UPSTREAM`
+    off: Buildroot copies the Tess DTS to `arch/arm/dts`
+    (`BR2_TARGET_UBOOT_CUSTOM_DTS_PATH`).
+  - `CONFIG_OF_LIBFDT_OVERLAY=y`, for device tree overlays (extlinux
+    `fdtoverlays`).
+  - `CONFIG_ENV_IS_NOWHERE` instead of `ENV_IS_IN_FAT`: there is no FAT
+    partition, the environment is not stored.
+- One Tess DTS (`sun8i-t113s-tess.dts`) for Linux and U-Boot. It includes
+  `<arm/allwinner/sun8i-t113s.dtsi>`, which resolves in both builds. The
+  separate U-Boot DTS, `uboot/tess_defconfig` and `uboot/uenv.txt` are gone.
+- `BR2_TARGET_UBOOT_NEEDS_GNUTLS=y`; hash in `patches/uboot/uboot.hash`.
+- Tested: FEL boot of the flasher (boot.scr), `tess-install`, distro boot
+  from the SD NAND (extlinux), reboot, USB console.
 
 ## 4. Flasher image: `configs/phyxbe_tess_flasher_defconfig` (works)
 
@@ -328,7 +312,7 @@ Purpose: the normal product image, booting on its own from the SD NAND.
    reconnect loop.
 6. Main image: data partition, init scripts, OTA update of the ESP
    firmware.
-7. U-Boot update (section 3.4), test FEL and SD NAND boot again.
+7. ~~U-Boot update (section 3.4).~~ Done, U-Boot 2026.01.
 8. Update `readme.txt` for both images.
 
 Related TODOs:
@@ -355,4 +339,4 @@ Related TODOs:
    by `tess-install` on the board.
 4. BLE HCI baudrate: 500000 (exact on the T113 UART).
 5. Flashing tool: espflash, no Python in the flasher image.
-6. U-Boot version: 2026.01, as the MangoPi defconfig.
+6. U-Boot version: 2026.01, as the MangoPi defconfig (done).

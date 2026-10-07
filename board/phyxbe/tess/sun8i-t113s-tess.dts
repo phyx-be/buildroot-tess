@@ -5,7 +5,8 @@
 
 /dts-v1/;
 
-#include "allwinner/sun8i-t113s.dtsi"
+/* <arm/...> resolves in both the Linux and the U-Boot build */
+#include <arm/allwinner/sun8i-t113s.dtsi>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/leds/common.h>
 
