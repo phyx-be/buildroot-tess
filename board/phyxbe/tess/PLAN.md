@@ -230,8 +230,14 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   8 KiB; U-Boot environment at 1 MiB (two redundant 64 KiB copies, raw,
   not a partition); `mmcblk0p1` rootfs A and `mmcblk0p2` rootfs B (96 MiB
   ext4 each, both written by the image, mounted read-only); `mmcblk0p3`
-  data (284 MiB ext4, `/data`), not in the image (196 MiB): `tess-install`
-  creates its filesystem, `S00datafs` does when it finds none.
+  data (ext4, `/data`, the rest of the SD NAND: 284 MiB on 480 MiB).
+  The image (196 MiB) and `tess-install` stop before the data partition,
+  so a reinstall keeps the data. `S00datafs` adds the partition when the
+  table has none (busybox `fdisk`, from the first 4 MiB boundary after
+  `mmcblk0p2` to the end of the disk, so the same place every time and
+  all of a bigger SD card), then reboots once: the kernel cannot re-read
+  the table of a disk with a mounted partition, and there is no `partx`
+  in the image.
 - **Boot**: `tess_boot` in U-Boot's default environment
   (`patches/uboot/0001-*.patch` adds `board/sunxi/tess.env`,
   `uboot/tess-main.fragment` selects it and the MMC environment) walks
@@ -255,10 +261,10 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   `/var/log` from `/data/rootfs`, copying entries missing there from the
   rootfs. `post-build-main.sh` turns the skeleton links `/var/log` and
   `/etc/dropbear` into directories. WiFi: `rc.netif` uses
-  `/etc/wpa_supplicant/wpa_supplicant.conf`, seeded from
-  `/boot/wpa_supplicant.conf`.
+  `/etc/wpa_supplicant/wpa_supplicant.conf`, seeded from the image by
+  `S00datafs`.
 - Tested 2026-10-14: first boot from the default environment (slot A),
-  data filesystem created by `tess-install`, binds and WiFi ok, dropbear
+  data filesystem created on the first boot, binds and WiFi ok, dropbear
   host key kept; `rauc install` to B, boot B, mark-good; slot A wiped and
   set first: three failed attempts, then B; A restored with
   `rauc install`.
@@ -306,7 +312,7 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   once (`stty -F /dev/ttyS2 hupcl`): after btattach, UART2 RTS stays
   asserted and holds GPIO8 low, so the ROM does not enter download mode
   (no output at all on ttyS4).
-- WiFi configuration: `/boot/wpa_supplicant.conf`; `/etc/rc.netif` (udev)
+- WiFi configuration: `/etc/wpa_supplicant/wpa_supplicant.conf`; `/etc/rc.netif` (udev)
   starts wpa_supplicant and ifplugd/udhcpc when wlan0 appears.
 - `iwlist` cannot scan (no WEXT), use `iw` or wpa_supplicant.
 - **Fixed: regulatory.db.** cfg80211 is built in (the esp-hosted package

@@ -89,11 +89,8 @@ case "$ACTION" in
     wlan*)
     ip link set ${INTERFACE} up
     # WiFi configuration: /etc/wpa_supplicant is persistent (on the data
-    # partition in the main image), the one in /boot comes with the image
+    # partition in the main image)
     WPA_CONF=/etc/wpa_supplicant/wpa_supplicant.conf
-    if [ ! -f ${WPA_CONF} ] && [ -f /boot/wpa_supplicant.conf ]; then
-      cp /boot/wpa_supplicant.conf ${WPA_CONF}
-    fi
     # check if we have a wpa_supplicant.conf file
     if [ -f ${WPA_CONF} ]; then
       # run wpa_supplicant and a dhcp client

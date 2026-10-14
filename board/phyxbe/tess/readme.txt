@@ -31,13 +31,18 @@ update bundle with its root filesystem (see "Updates").
 Storage layout
 ==============
 
-SD NAND (mmcblk0, 480 MiB):
+SD NAND (mmcblk0, 480 MiB, or larger):
 
   8 KiB    U-Boot with SPL
   1 MiB    U-Boot environment, two redundant copies of 64 KiB
   4 MiB    mmcblk0p1  root filesystem slot A (96 MiB, ext4, read-only)
   100 MiB  mmcblk0p2  root filesystem slot B (96 MiB, ext4, read-only)
-  196 MiB  mmcblk0p3  data (284 MiB, ext4, read-write, /data)
+  196 MiB  mmcblk0p3  data (the rest, ext4, read-write, /data)
+
+The image (sdcard.img) holds everything up to the data partition, which
+it does not contain. On boot, /etc/init.d/S00datafs adds the data
+partition when the partition table has none (up to the end of the SD
+NAND, then it reboots once) and creates its filesystem when it has none.
 
 U-Boot boots the slot that RAUC selected: BOOT_ORDER, BOOT_A_LEFT and
 BOOT_B_LEFT in its environment (fw_printenv on the board). Each boot
@@ -98,9 +103,10 @@ Installing over USB (FEL)
    # tess-install
 
    It flashes the ESP32-C3 firmware over UART4, writes the main image
-   to the SD NAND (both root filesystem slots) and creates an empty data
-   partition, erasing the previous one. Then reset the board without SW2
-   to boot it.
+   to the SD NAND: U-Boot, its environment (back to the defaults) and
+   both root filesystem slots. The data partition is not touched, the
+   main image finds it again on its first boot (and reboots once). Then
+   reset the board without SW2 to boot it.
 
 If SW2 does not get the board into FEL, erase the U-Boot SPL from the
 running main image; the boot ROM then falls back to FEL on the next
@@ -113,8 +119,8 @@ WiFi
 ====
 
 The WiFi configuration is /etc/wpa_supplicant/wpa_supplicant.conf, on
-the data partition. On the first boot it is a copy of
-/boot/wpa_supplicant.conf from the image, if that exists. To change it
+the data partition. On the first boot it is a copy of the one in the
+image (rootfs_overlay/etc/wpa_supplicant/), if that exists. To change it
 on the board:
 
    # { echo "ctrl_interface=/var/run/wpa_supplicant"

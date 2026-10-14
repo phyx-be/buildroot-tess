@@ -4,17 +4,27 @@
 # persistent directories of the read-only root filesystem (DATA_BINDS in
 # /etc/default/datafs) from /data/rootfs.
 #
-# A data partition without a filesystem (first boot after writing
-# sdcard.img with dd) gets a new one. One that cannot be repaired or
+# The image (sdcard.img) does not contain the data partition, so writing
+# it leaves the data alone. When the partition table has no data
+# partition, it is added from the first 4 MiB boundary after the previous
+# partition (root filesystem slot B) to the end of the disk: the whole
+# SD NAND, whatever its size, and the same place every time, so a data
+# filesystem from before a reinstall is found again; the system then
+# reboots once to use it. A data partition
+# without a filesystem gets a new one. One that cannot be repaired or
 # mounted is left alone: /data is then a tmpfs, so the system still
 # boots, but nothing persists.
 
-DATA_DEV=/dev/mmcblk0p3
+DATA_DISK=/dev/mmcblk0
+DATA_PART=3
 DATA_DIR=/data
 DATA_BINDS=""
 
 # shellcheck source=/dev/null
 [ -r /etc/default/datafs ] && . /etc/default/datafs
+
+DATA_DEV=${DATA_DISK}p${DATA_PART}
+ALIGN=8192	# 4 MiB in 512 byte sectors
 
 log() {
 	echo "datafs: $*"
@@ -25,9 +35,38 @@ is_ext4() {
 	tune2fs -l "$1" > /dev/null 2>&1
 }
 
+# Add the data partition to the partition table (busybox fdisk). The root
+# filesystem is mounted, so the kernel cannot re-read the partition table:
+# reboot, once, to use the new partition. Nothing is mounted read-write
+# yet.
+create_partition() {
+	disk=${DATA_DISK##*/}
+	prev=/sys/block/${disk}/${disk}p$((DATA_PART - 1))
+	if [ ! -r "${prev}/start" ]; then
+		log "${prev##*/} not found, cannot place the data partition"
+		return 1
+	fi
+	start=$(( ($(cat "${prev}/start") + $(cat "${prev}/size") + ALIGN - 1) / ALIGN * ALIGN ))
+
+	log "no data partition, creating ${DATA_DEV} from sector ${start} to the end of ${DATA_DISK}"
+	# new primary partition DATA_PART, from start to the default end (the
+	# end of the disk), type Linux; fdisk's re-read of the table fails
+	printf 'n\np\n%s\n%s\n\nw\n' "${DATA_PART}" "${start}" |
+		fdisk -u "${DATA_DISK}" > /dev/null 2>&1
+	if ! fdisk -l -u "${DATA_DISK}" | grep -q "^${DATA_DEV} "; then
+		log "fdisk could not add ${DATA_DEV}"
+		return 1
+	fi
+
+	log "rebooting to use ${DATA_DEV}"
+	echo "Created ${DATA_DEV}, rebooting"
+	sync
+	reboot -f
+}
+
 mount_data() {
-	if [ ! -b "${DATA_DEV}" ]; then
-		log "${DATA_DEV} not found"
+	if [ ! -b "${DATA_DEV}" ] && ! create_partition; then
+		log "cannot create ${DATA_DEV}"
 		return 1
 	fi
 
