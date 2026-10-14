@@ -1,0 +1,7 @@
+# Data partition, mounted read-write on /data by /etc/init.d/S00datafs
+DATA_DEV=/dev/mmcblk0p3
+
+# Directories of the read-only root filesystem that are bind-mounted from
+# /data/rootfs/<directory>. On the first boot, and for entries an update
+# adds later, the contents come from the root filesystem.
+DATA_BINDS="/etc/dropbear /etc/wpa_supplicant /var/lib /var/log"

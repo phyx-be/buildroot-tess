@@ -88,11 +88,16 @@ case "$ACTION" in
     ;;
     wlan*)
     ip link set ${INTERFACE} up
+    # WiFi configuration: /etc/wpa_supplicant is persistent (on the data
+    # partition in the main image), the one in /boot comes with the image
+    WPA_CONF=/etc/wpa_supplicant/wpa_supplicant.conf
+    if [ ! -f ${WPA_CONF} ] && [ -f /boot/wpa_supplicant.conf ]; then
+      cp /boot/wpa_supplicant.conf ${WPA_CONF}
+    fi
     # check if we have a wpa_supplicant.conf file
-    if [ -f /boot/wpa_supplicant.conf ]; then
+    if [ -f ${WPA_CONF} ]; then
       # run wpa_supplicant and a dhcp client
-      cp /boot/wpa_supplicant.conf /run/wpa_supplicant_${INTERFACE}.conf
-      wpa_supplicant -i ${INTERFACE} -c /run/wpa_supplicant_${INTERFACE}.conf -D nl80211,wext -B
+      wpa_supplicant -i ${INTERFACE} -c ${WPA_CONF} -D nl80211,wext -B
       ifplugd -i ${INTERFACE} -u1 -d3 -I -r /etc/rc.netiflink
     else
       # start an AP and add the interface to the bridge

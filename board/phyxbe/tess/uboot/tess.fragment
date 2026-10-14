@@ -9,6 +9,7 @@ CONFIG_DEFAULT_DEVICE_TREE="sun8i-t113s-tess"
 # Device tree overlays (e.g. the DSI display)
 CONFIG_OF_LIBFDT_OVERLAY=y
 
-# No persistent environment: there is no FAT partition for uboot.env
+# No persistent environment by default, the main image stores it in
+# MMC (tess-main.fragment)
 # CONFIG_ENV_IS_IN_FAT is not set
 CONFIG_ENV_IS_NOWHERE=y

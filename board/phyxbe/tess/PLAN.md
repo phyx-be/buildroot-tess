@@ -224,11 +224,44 @@ the main image to SDC0 and flashes the ESP32-C3 over UART4.
 
 Purpose: the normal product image, booting on its own from the SD NAND.
 
-- Done: no initramfs, 128 MB ext4 root filesystem. `genimage.cfg`:
-  U-Boot SPL at 8 KiB, one bootable rootfs partition (`mmcblk0p1`).
-  U-Boot's distro boot loads `/boot/extlinux/extlinux.conf` (kernel and
-  DTB in `/boot`). The boot script and sunxi-fel host tools moved to
+- Done: no initramfs. The boot script and sunxi-fel host tools moved to
   the flasher.
+- **Storage layout (A/B with RAUC), `genimage.cfg`**: U-Boot with SPL at
+  8 KiB; U-Boot environment at 1 MiB (two redundant 64 KiB copies, raw,
+  not a partition); `mmcblk0p1` rootfs A and `mmcblk0p2` rootfs B (96 MiB
+  ext4 each, both written by the image, mounted read-only); `mmcblk0p3`
+  data (284 MiB ext4, `/data`), not in the image (196 MiB): `tess-install`
+  creates its filesystem, `S00datafs` does when it finds none.
+- **Boot**: `tess_boot` in U-Boot's default environment
+  (`patches/uboot/0001-*.patch` adds `board/sunxi/tess.env`,
+  `uboot/tess-main.fragment` selects it and the MMC environment) walks
+  `BOOT_ORDER`, decrements `BOOT_x_LEFT`, saves the environment and runs
+  `sysboot` on `/boot/extlinux/extlinux.conf` of that slot; the append
+  line gets `root=/dev/mmcblk0p${tess_part} ro rauc.slot=${tess_slot}`.
+  `bootcmd` reloads `tess_boot` from the default environment first, so a
+  saved environment cannot pin an old script. The flasher keeps
+  `ENV_IS_NOWHERE`: booted over FEL, sunxi has no valid location for an
+  MMC environment and U-Boot would hang.
+- **RAUC** 1.15 (`/etc/rauc/system.conf`, `bootloader=uboot`,
+  `fw_setenv` from libubootenv, `/etc/fw_env.config`); verity bundles
+  (kernel: loop, squashfs, dm-verity, `rauc.frag`);
+  `output/images/tess-update.raucb` from `post-image-main.sh`, signed with
+  the development key in `rauc/` (or `TESS_RAUC_KEY`/`TESS_RAUC_CERT`).
+  `use-bundle-signing-time=true`: the board has no RTC, its clock starts
+  in 1970 and a new certificate is "not yet valid". `S99rauc-mark-good`.
+- **Read-only root, persistent directories**: `S00datafs` mounts `/data`
+  (e2fsck, mkfs only without a filesystem, tmpfs fallback) and
+  bind-mounts `/etc/dropbear`, `/etc/wpa_supplicant`, `/var/lib`,
+  `/var/log` from `/data/rootfs`, copying entries missing there from the
+  rootfs. `post-build-main.sh` turns the skeleton links `/var/log` and
+  `/etc/dropbear` into directories. WiFi: `rc.netif` uses
+  `/etc/wpa_supplicant/wpa_supplicant.conf`, seeded from
+  `/boot/wpa_supplicant.conf`.
+- Tested 2026-10-14: first boot from the default environment (slot A),
+  data filesystem created by `tess-install`, binds and WiFi ok, dropbear
+  host key kept; `rauc install` to B, boot B, mark-good; slot A wiped and
+  set first: three failed attempts, then B; A restored with
+  `rauc install`.
 - `reboot` needs the watchdog: the SoC dtsi has it `reserved`, the Tess
   DTS enables it, so `sunxi-wdt` provides the restart handler.
 - Tested 2026-10-07: SPL, U-Boot distro boot (extlinux), ext4 root on
@@ -291,10 +324,6 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   Tested: `btattach -B /dev/ttyS2 -P h4 -S 500000`, bluetoothctl LE scan
   finds devices. `bluetoothctl` needs commands on stdin when not run
   interactively.
-- To do: a data partition (`mmcblk0p2`). `rootfs_overlay/etc/default/datafs`
-  still points `DATDEV` at `mmcblk0p1`, which is now the rootfs; nothing
-  calls `/usr/bin/datafs` today, but fix this before using it, as it
-  runs `mkfs.ext4` when the mount fails.
 - WiFi/BLE packages: `esp-hosted`, `wpa_supplicant` (nl80211),
   `wireless-regdb`, `iw`, `bluez5_utils` (client, monitor, tools); to
   add: `network_adapter.bin` for OTA. No Python, no espflash.
@@ -324,8 +353,8 @@ Purpose: the normal product image, booting on its own from the SD NAND.
    fixed with `input-debounce`), BLE scans work (btattach fix),
    regulatory.db loads (S45regdb), WPA2 + DHCP work (fixed upstream in
    `2a8772c`), reconnect works (firmware patch 0002).
-6. Main image: data partition, init scripts, OTA update of the ESP
-   firmware.
+6. Main image: ~~data partition, A/B root filesystems with RAUC~~ (done);
+   OTA update of the ESP firmware.
 7. ~~U-Boot update (section 3.4).~~ Done, U-Boot 2026.01.
 8. Update `readme.txt` for both images.
 

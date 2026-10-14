@@ -25,6 +25,31 @@ $ make
 $ make O=output-flasher phyxbe_tess_flasher_defconfig
 $ make O=output-flasher
 
+The main build also creates output/images/tess-update.raucb, a RAUC
+update bundle with its root filesystem (see "Updates").
+
+Storage layout
+==============
+
+SD NAND (mmcblk0, 480 MiB):
+
+  8 KiB    U-Boot with SPL
+  1 MiB    U-Boot environment, two redundant copies of 64 KiB
+  4 MiB    mmcblk0p1  root filesystem slot A (96 MiB, ext4, read-only)
+  100 MiB  mmcblk0p2  root filesystem slot B (96 MiB, ext4, read-only)
+  196 MiB  mmcblk0p3  data (284 MiB, ext4, read-write, /data)
+
+U-Boot boots the slot that RAUC selected: BOOT_ORDER, BOOT_A_LEFT and
+BOOT_B_LEFT in its environment (fw_printenv on the board). Each boot
+attempt costs one, /etc/init.d/S99rauc-mark-good resets the counter
+once the system is up, and a slot that fails three times in a row falls
+back to the other one.
+
+The root filesystem is read-only. These directories are bind-mounted
+from /data/rootfs (/etc/default/datafs), so they persist across reboots
+and updates: /etc/dropbear (SSH host keys), /etc/wpa_supplicant (WiFi),
+/var/lib and /var/log. Everything else is replaced by an update.
+
 Serial console
 ==============
 
@@ -72,16 +97,45 @@ Installing over USB (FEL)
 
    # tess-install
 
-   It flashes the ESP32-C3 firmware over UART4 and writes the main image
-   to the SD NAND. Then reset the board without SW2 to boot it.
+   It flashes the ESP32-C3 firmware over UART4, writes the main image
+   to the SD NAND (both root filesystem slots) and creates an empty data
+   partition, erasing the previous one. Then reset the board without SW2
+   to boot it.
 
-WiFi: write /boot/wpa_supplicant.conf on the board, e.g.
+If SW2 does not get the board into FEL, erase the U-Boot SPL from the
+running main image; the boot ROM then falls back to FEL on the next
+reset:
+
+   # dd if=/dev/zero of=/dev/mmcblk0 bs=512 seek=16 count=2 conv=fsync
+   # reboot
+
+WiFi
+====
+
+The WiFi configuration is /etc/wpa_supplicant/wpa_supplicant.conf, on
+the data partition. On the first boot it is a copy of
+/boot/wpa_supplicant.conf from the image, if that exists. To change it
+on the board:
 
    # { echo "ctrl_interface=/var/run/wpa_supplicant"
        wpa_passphrase "<ssid>" "<password>" | grep -v '#psk'
-     } > /boot/wpa_supplicant.conf
+     } > /etc/wpa_supplicant/wpa_supplicant.conf
 
-and reboot. The country is set in /etc/default/regdomain.
+and reboot. The country is set in /etc/default/regdomain (in the image).
+
+Updates
+=======
+
+Copy the bundle to the data partition and install it with RAUC; it
+writes the other root filesystem slot and makes U-Boot boot it next:
+
+   $ scp output/images/tess-update.raucb root@<board>:/data/
+   # rauc install /data/tess-update.raucb
+   # reboot
+
+"rauc status" shows the slots and which one is booted. Bundles are
+signed with the development key in board/phyxbe/tess/rauc/ unless
+TESS_RAUC_KEY and TESS_RAUC_CERT are set; see rauc/README.
 
 Display
 =======
@@ -89,4 +143,4 @@ Display
 The Raspberry Pi 7" DSI display (with touchscreen) is not in the board
 device tree but in the rpi-7inch-dsi.dtbo overlay. The main image loads
 it with "fdtoverlays" in /boot/extlinux/extlinux.conf: remove that line
-when no display is connected. The flasher applies it in its boot script.
+from board/phyxbe/tess/rootfs_overlay when no display is connected. The flasher applies it in its boot script.
