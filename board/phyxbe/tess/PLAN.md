@@ -252,9 +252,27 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   firmware patch 0002. Tested 2026-10-14 (`NG-1.0.6.0.15`, no patch
   0002): WPA2-PSK `COMPLETED`, DHCP, ping, DNS, 10 MB download in 7 s
   (12 Mbit/s), no SPI timeouts.
-- **Open: reconnect.** After `wpa_cli disconnect` + `reconnect` the
-  driver loops (`auth timeout`, `Drop DISCONNECT_EVENT for unexpected
-  generation`); reloading `esp32_spi` recovers.
+- **Fixed: reconnect.** After `wpa_cli disconnect` + `reconnect` (or
+  restarting wpa_supplicant) the station looped on `auth timeout` and
+  `Drop DISCONNECT_EVENT for unexpected generation` until `esp32_spi`
+  was reloaded. The firmware handles `CMD_DISCONNECT` with
+  `esp_wifi_deauthenticate_internal()`: the station goes `run -> init`,
+  but the v6.1 Wi-Fi library posts `WIFI_EVENT_STA_DISCONNECTED` only
+  when the next connection attempt ends. cfg80211 kept the old
+  connection, the new auth retired the pending disconnect, and the late
+  event was dropped; on its own the driver times out after 5 s and
+  resets the ESP. `esp32c3/patches/0002-*.patch` uses
+  `esp_wifi_disconnect()`, which posts the event at once (deauth reason
+  8 instead of the host's reason). Tested 2026-10-14: 5 disconnect +
+  reconnect cycles back to `COMPLETED` in 2 s each, ping ok, plus a
+  wpa_supplicant restart; no dropped events. To report upstream.
+- Reflashing the ESP32-C3 from the main image, for firmware tests:
+  copy `espflash`, `gpioset`, `gpiodetect`, `libgpiod.so.3`,
+  `libgpiotools.so.1` and `esp32c3-flash` from `output-flasher/target`,
+  stop btattach, `rmmod esp32_spi`, then open and close `/dev/ttyS2`
+  once (`stty -F /dev/ttyS2 hupcl`): after btattach, UART2 RTS stays
+  asserted and holds GPIO8 low, so the ROM does not enter download mode
+  (no output at all on ttyS4).
 - WiFi configuration: `/boot/wpa_supplicant.conf`; `/etc/rc.netif` (udev)
   starts wpa_supplicant and ifplugd/udhcpc when wlan0 appears.
 - `iwlist` cannot scan (no WEXT), use `iw` or wpa_supplicant.
@@ -305,7 +323,7 @@ Purpose: the normal product image, booting on its own from the SD NAND.
 5. Main image from the SD NAND: boots, WiFi scans work (SPI timeouts
    fixed with `input-debounce`), BLE scans work (btattach fix),
    regulatory.db loads (S45regdb), WPA2 + DHCP work (fixed upstream in
-   `2a8772c`). Next: fix the reconnect loop.
+   `2a8772c`), reconnect works (firmware patch 0002).
 6. Main image: data partition, init scripts, OTA update of the ESP
    firmware.
 7. ~~U-Boot update (section 3.4).~~ Done, U-Boot 2026.01.
@@ -319,7 +337,8 @@ Related TODOs:
   is built with symbols (`BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT`). Linux
   6.18 cannot build a single `.dtbo` in `arch/arm/boot/dts`:
   `patches/linux/0002-kbuild-*.patch`.
-- Upstream: esp-hosted-linux issue: the reconnect loop; esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
+- Upstream: esp-hosted-linux: firmware patch 0002 (late disconnect
+  event with the v6.1 Wi-Fi libraries); esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
   `esp-hosted` package update; espflash patch for non-enumerated ports;
   Buildroot `bluez5_utils` btattach backport; kbuild patch for single
   `.dtbo` targets;
