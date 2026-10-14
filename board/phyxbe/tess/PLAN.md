@@ -1,8 +1,8 @@
 # Tess: ESP32-C3 WiFi/BLE and image layout plan
 
-Status (2026-10-07): the flasher image flashes the ESP32-C3 and writes
+Status (2026-10-14): the flasher image flashes the ESP32-C3 and writes
 the main image to the SD NAND, and the main image boots from the SD
-NAND. WiFi over esp-hosted works (WPA2, DHCP, internet, 9 Mbit/s) and
+NAND. WiFi over esp-hosted works (WPA2, DHCP, internet, 12 Mbit/s) and
 BLE over UART2 works (btattach, bluetoothctl LE scan). See section 6.
 
 Goals:
@@ -211,7 +211,11 @@ the main image to SDC0 and flashes the ESP32-C3 over UART4.
   left untouched), then write `sdcard.img.xz` to `/dev/mmcblk0` and verify it
   against the SHA-256. Run by hand for now.
 - Once the SD NAND has a boot image, FEL needs SW2 + SW1 again (a
-  `reboot` boots the SD NAND).
+  `reboot` boots the SD NAND). If the buttons do not work (2026-10-14:
+  four tries, the board kept booting the SD NAND), zero the SPL header
+  from the main image and reboot, the BROM then falls back to FEL:
+  `dd if=/dev/zero of=/dev/mmcblk0 bs=512 seek=16 count=2 conv=fsync`
+  (the image has no second SPL copy at 128 KiB).
 - Tested 2026-10-07: boots over FEL (squashfs in `/dev/ram0`, 70 MB RAM
   free), `tess-install` takes 1.5 minutes (espflash at 1500000 baud,
   verified, then the SD NAND written and verified).
@@ -245,7 +249,9 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   Bisected to `4ddec53` (merge of feature/idf-v6.1; `ffe2af4` with
   ESP-IDF v5.5.1 works). Fixed upstream in `2a8772c` ("hosted: fix STA
   data port not opening after authorization"), which replaces our former
-  firmware patch 0002.
+  firmware patch 0002. Tested 2026-10-14 (`NG-1.0.6.0.15`, no patch
+  0002): WPA2-PSK `COMPLETED`, DHCP, ping, DNS, 10 MB download in 7 s
+  (12 Mbit/s), no SPI timeouts.
 - **Open: reconnect.** After `wpa_cli disconnect` + `reconnect` the
   driver loops (`auth timeout`, `Drop DISCONNECT_EVENT for unexpected
   generation`); reloading `esp32_spi` recovers.
