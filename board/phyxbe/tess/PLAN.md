@@ -69,10 +69,10 @@ flash).
 - Device tree support (`compatible = "espressif,esp32-spi"`,
   `reset-gpios`, `handshake-gpios`, `data-ready-gpios`,
   `spi-max-frequency`, `spi-cpol`) exists **only on master**, not in the
-  `release/ng-1.0.6` tag. Pinned master commit: `599c47c` (2026-10-07).
+  `release/ng-1.0.6` tag. Pinned master commit: `2a8772c` (2026-10-08).
 - Host driver and firmware versions must match exactly: the driver
   compares version strings and refuses a mismatch. Both are built from
-  the same commit and report `NG-1.0.6.0.14`.
+  the same commit and report `NG-1.0.6.0.15`.
 - The driver builds without warnings for ARM32 against 6.18.8.
 - The driver pulses `reset-gpios` at probe (500 ms boot wait) and owns
   that GPIO while bound.
@@ -237,24 +237,15 @@ Purpose: the normal product image, booting on its own from the SD NAND.
   LOSC by default (`Px_EINT_DEB` reset value 0), so it missed the short
   ESP32-C3 handshake/data-ready pulses. Fix in the Tess DTS:
   `&pio { input-debounce = <1 1 1 1 1 1>; }` (HOSC, 750 kHz sampling).
-- **Worked around: no data after connecting.** With WPA2 the driver and
+- **Fixed upstream: no data after connecting.** With WPA2 the driver and
   the firmware keep the data path closed (EAPOL only) until
-  `CMD_STA_SET_AUTHORIZED`. The firmware's `esp_wifi_auth_done_internal()`
-  (closed Wi-Fi library) fails there, every time, also when retried 600 ms
-  later, so no DHCP. `esp32c3/patches/0002-*.patch` authorizes the port
-  anyway (with a warning). Tested: DHCP, ping, DNS, 10 MB download at
-  9.1 Mbit/s, no SPI timeouts.
-  Bisected (driver and firmware built from the same commit, firmware
-  without patch 0002, WPA2-PSK):
-  - `ffe2af4` (SPI device tree merge, ESP-IDF v5.5.1, includes the size
-    reduction `2c41cd4`): works, `STA_SET_AUTHORIZED` succeeds, DHCP ok.
-  - `4ddec53` (merge of feature/idf-v6.1: ESP-IDF v6.1 and its Wi-Fi
-    libraries 3ab2604c): fails.
-  The firmware code for this command and the declaration of
-  `esp_wifi_auth_done_internal()` did not change in that merge, so the
-  behaviour changed inside the closed v6.1 Wi-Fi libraries: it either
-  fails now, or returns true on success (inverting the firmware's
-  check). To report upstream (esp-hosted-linux).
+  `CMD_STA_SET_AUTHORIZED`. The ESP-IDF v6.1 Wi-Fi libraries changed
+  `esp_wifi_auth_done_internal()` to return true on success, so the
+  firmware's check was inverted and the command always failed: no DHCP.
+  Bisected to `4ddec53` (merge of feature/idf-v6.1; `ffe2af4` with
+  ESP-IDF v5.5.1 works). Fixed upstream in `2a8772c` ("hosted: fix STA
+  data port not opening after authorization"), which replaces our former
+  firmware patch 0002.
 - **Open: reconnect.** After `wpa_cli disconnect` + `reconnect` the
   driver loops (`auth timeout`, `Drop DISCONNECT_EVENT for unexpected
   generation`); reloading `esp32_spi` recovers.
@@ -307,9 +298,8 @@ Purpose: the normal product image, booting on its own from the SD NAND.
 4. ~~Flasher image: espflash, squashfs root, `tess-install`.~~ Done.
 5. Main image from the SD NAND: boots, WiFi scans work (SPI timeouts
    fixed with `input-debounce`), BLE scans work (btattach fix),
-   regulatory.db loads (S45regdb), WPA2 + DHCP work (firmware patch 0002).
-   Next: confirm the cause of the authorization failure upstream, fix the
-   reconnect loop.
+   regulatory.db loads (S45regdb), WPA2 + DHCP work (fixed upstream in
+   `2a8772c`). Next: fix the reconnect loop.
 6. Main image: data partition, init scripts, OTA update of the ESP
    firmware.
 7. ~~U-Boot update (section 3.4).~~ Done, U-Boot 2026.01.
@@ -323,9 +313,7 @@ Related TODOs:
   is built with symbols (`BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT`). Linux
   6.18 cannot build a single `.dtbo` in `arch/arm/boot/dts`:
   `patches/linux/0002-kbuild-*.patch`.
-- Upstream: esp-hosted-linux issue: `CMD_STA_SET_AUTHORIZED` fails with
-  the ESP-IDF v6.1 Wi-Fi libraries (bisected to `4ddec53`), plus the
-  reconnect loop; esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
+- Upstream: esp-hosted-linux issue: the reconnect loop; esp-hosted-linux HCI UART fix for ESP-IDF v6.1; Buildroot
   `esp-hosted` package update; espflash patch for non-enumerated ports;
   Buildroot `bluez5_utils` btattach backport; kbuild patch for single
   `.dtbo` targets;
