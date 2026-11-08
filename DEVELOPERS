@@ -556,6 +556,10 @@ F:	package/zix/
 F:	package/znc/
 F:	support/testing/tests/package/test_perl_html_parser.py
 
+N:	Bert Outtier <outtierbert@gmail.com>
+F:	board/phyxbe/
+F:	configs/phyxbe_tess_defconfig
+
 N:	Biagio Montaruli <biagio.hkr@gmail.com>
 F:	board/acmesystems/
 F:	configs/acmesystems_*
