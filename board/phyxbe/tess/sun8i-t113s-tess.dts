@@ -15,7 +15,7 @@
 	compatible = "phyx,tess-t113", "allwinner,sun8i-t113s";
 
 	aliases {
-		i2c2 = &i2c2;		/* expansion connector, DSI */
+		i2c2 = &i2c2;		/* DSI connector (and expansion header on rev 00) */
 		i2c3 = &i2c3;		/* feather */
 		serial2 = &uart2;	/* ESP32-C3 BLE HCI */
 		serial3 = &uart3;	/* console */
@@ -215,7 +215,7 @@
 	status = "okay";
 };
 
-/* expansion/dsi i2c */
+/* DSI connector i2c (and expansion header on rev 00) */
 &i2c2 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c2_pd_pins>;
