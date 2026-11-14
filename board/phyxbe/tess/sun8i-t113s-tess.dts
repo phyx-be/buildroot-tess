@@ -63,6 +63,13 @@
 		regulator-always-on;
 	};
 
+	/* Li-ion charger: CHG.STAT (PG12) is low while the battery charges */
+	charger {
+		compatible = "gpio-charger";
+		charger-type = "usb-sdp";
+		charge-status-gpios = <&pio 6 12 GPIO_ACTIVE_LOW>;
+	};
+
 	/* SY8008 DC/DC regulator on the board */
 	reg_3v3: regulator-3v3 {
 		compatible = "regulator-fixed";
